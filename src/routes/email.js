@@ -23,6 +23,11 @@ router.post("/webhooks/email", async (req, res) => {
     return;
   }
 
+  if (msg.message_id && statements.messageByMessageId.get(msg.message_id)) {
+    console.log(`[email] duplicate delivery of ${msg.message_id}, skipping (already processed)`);
+    return;
+  }
+
   statements.insertMessage.run({
     lead_id: lead.id,
     direction: "inbound",

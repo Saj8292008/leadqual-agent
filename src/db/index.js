@@ -34,6 +34,8 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
   CREATE INDEX IF NOT EXISTS idx_messages_lead ON messages(lead_id);
+  -- SQLite unique indexes ignore NULLs, so dry-run sends (message_id = null) are unaffected.
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
 `);
 
 const statements = {
@@ -43,6 +45,8 @@ const statements = {
   `),
   findLeadByEmail: db.prepare(`SELECT * FROM leads WHERE email = ?`),
   getLead: db.prepare(`SELECT * FROM leads WHERE id = ?`),
+  listLeads: db.prepare(`SELECT * FROM leads ORDER BY updated_at DESC`),
+  messageByMessageId: db.prepare(`SELECT * FROM messages WHERE message_id = ?`),
   updateLead: db.prepare(`
     UPDATE leads SET
       status = @status,
@@ -60,7 +64,7 @@ const statements = {
     VALUES (@lead_id, @direction, @channel, @subject, @body, @message_id)
   `),
   historyForLead: db.prepare(`
-    SELECT direction, body, created_at FROM messages
+    SELECT direction, channel, subject, body, message_id, created_at FROM messages
     WHERE lead_id = ? ORDER BY created_at ASC
   `),
   leadsDueForDrip: db.prepare(`
