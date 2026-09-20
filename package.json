@@ -1,0 +1,21 @@
+{
+  "name": "leadqual-agent",
+  "version": "0.1.0",
+  "description": "AI lead qualification & follow-up agent for real estate agents",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "drip": "node src/services/dripRunner.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "agentmail": "^0.1.9",
+    "better-sqlite3": "^11.5.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "googleapis": "^144.0.0"
+  }
+}
