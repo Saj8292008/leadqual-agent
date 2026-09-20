@@ -5,6 +5,7 @@ const { db } = require("./db");
 const leadsRouter = require("./routes/leads");
 const emailRouter = require("./routes/email");
 const inspectRouter = require("./routes/inspect");
+const listingsRouter = require("./routes/listings");
 
 const app = express();
 app.use(express.json());
@@ -14,6 +15,7 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 app.use(leadsRouter);
 app.use(emailRouter);
 app.use(inspectRouter);
+app.use(listingsRouter);
 
 const port = process.env.PORT || 3000;
 const server = app.listen(port, () => console.log(`leadqual-agent listening on :${port}`));
