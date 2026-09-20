@@ -2,6 +2,7 @@ const { statements } = require("../db");
 const claude = require("./claude");
 const email = require("./email");
 const calendar = require("./calendar");
+const slack = require("./slack");
 
 function subjectFor(lead) {
   return `Re: your home search${lead.name ? " — " + lead.name : ""}`;
@@ -66,8 +67,10 @@ async function runTurn(leadId) {
   }
 
   if (decision.handoff) {
-    console.log(`[handoff] lead ${lead.id} (${lead.name || lead.email}) needs a human — ${decision.notes || ""}`);
-    // Hook a Slack/email alert here in production.
+    const freshLead = statements.getLead.get(lead.id);
+    slack.notifyHandoff({ lead: freshLead, reason: decision.notes }).catch((err) =>
+      console.error(`[handoff] slack alert failed for lead ${lead.id}:`, err)
+    );
   }
 
   return decision;
