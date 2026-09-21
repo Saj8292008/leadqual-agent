@@ -2,6 +2,7 @@ const express = require("express");
 const { listingStatements } = require("../db/listings");
 const listingContent = require("../services/listingContent");
 const { renderFlyerHtml } = require("../services/flyer");
+const { requireAdminAuth } = require("../middleware/adminAuth");
 
 const router = express.Router();
 
@@ -39,7 +40,7 @@ async function generateContentFor(listingId) {
 }
 
 // Re-run generation (e.g. after editing raw facts) without re-posting the listing.
-router.post("/listings/:id/regenerate", async (req, res) => {
+router.post("/listings/:id/regenerate", requireAdminAuth, async (req, res) => {
   const listing = listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
   try {
@@ -50,24 +51,24 @@ router.post("/listings/:id/regenerate", async (req, res) => {
   }
 });
 
-router.get("/listings", (req, res) => {
+router.get("/listings", requireAdminAuth, (req, res) => {
   res.json(listingStatements.listListings.all());
 });
 
-router.get("/listings/:id", (req, res) => {
+router.get("/listings/:id", requireAdminAuth, (req, res) => {
   const listing = listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
   res.json(listing);
 });
 
-router.get("/listings/:id/flyer", (req, res) => {
+router.get("/listings/:id/flyer", requireAdminAuth, (req, res) => {
   const listing = listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).send("not found");
   res.set("Content-Type", "text/html");
   res.send(renderFlyerHtml(listing));
 });
 
-router.post("/listings/:id/publish", (req, res) => {
+router.post("/listings/:id/publish", requireAdminAuth, (req, res) => {
   const listing = listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
   if (listing.status !== "generated") {
