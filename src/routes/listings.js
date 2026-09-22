@@ -2,6 +2,7 @@ const express = require("express");
 const { listingStatements } = require("../db/listings");
 const listingContent = require("../services/listingContent");
 const { renderFlyerHtml } = require("../services/flyer");
+const { checkContent } = require("../services/factCheck");
 const { requireAdminAuth } = require("../middleware/adminAuth");
 
 const router = express.Router();
@@ -36,7 +37,13 @@ router.post("/webhooks/listing", async (req, res) => {
 async function generateContentFor(listingId) {
   const listing = listingStatements.getListing.get(listingId);
   const content = await listingContent.generate(listing);
-  listingStatements.saveGeneratedContent.run({ id: listingId, ...content });
+  const flags = checkContent(content, listing);
+  listingStatements.saveGeneratedContent.run({
+    id: listingId,
+    ...content,
+    status: flags.length ? "needs_review" : "generated",
+    fact_check_flags: flags.length ? JSON.stringify(flags) : null,
+  });
 }
 
 // Re-run generation (e.g. after editing raw facts) without re-posting the listing.
@@ -68,9 +75,27 @@ router.get("/listings/:id/flyer", requireAdminAuth, (req, res) => {
   res.send(renderFlyerHtml(listing));
 });
 
+// Clear a needs_review flag after a human has checked the flagged claims —
+// either the copy gets edited first, or this just confirms it's fine as-is.
+router.post("/listings/:id/clear-review", requireAdminAuth, (req, res) => {
+  const listing = listingStatements.getListing.get(req.params.id);
+  if (!listing) return res.status(404).json({ error: "not found" });
+  if (listing.status !== "needs_review") {
+    return res.status(400).json({ error: "listing is not pending review" });
+  }
+  listingStatements.clearReview.run({ id: listing.id });
+  res.json(listingStatements.getListing.get(listing.id));
+});
+
 router.post("/listings/:id/publish", requireAdminAuth, (req, res) => {
   const listing = listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
+  if (listing.status === "needs_review") {
+    return res.status(400).json({
+      error: "flagged content needs review before publishing",
+      flags: JSON.parse(listing.fact_check_flags || "[]"),
+    });
+  }
   if (listing.status !== "generated") {
     return res.status(400).json({ error: "content not generated yet" });
   }
