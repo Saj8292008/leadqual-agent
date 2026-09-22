@@ -4,6 +4,7 @@ const listingContent = require("../services/listingContent");
 const { renderFlyerHtml } = require("../services/flyer");
 const { checkContent } = require("../services/factCheck");
 const { requireAdminAuth } = require("../middleware/adminAuth");
+const slack = require("../services/slack");
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ router.post("/webhooks/listing", async (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid });
 
   generateContentFor(info.lastInsertRowid).catch((err) =>
-    console.error(`[listing ${info.lastInsertRowid}] content generation failed:`, err)
+    handleGenerationFailure(info.lastInsertRowid, err)
   );
 });
 
@@ -46,6 +47,19 @@ async function generateContentFor(listingId) {
   });
 }
 
+// The model can fail outright (no tool call after retries) with sparse
+// input — leaving the listing silently stuck with no content and no signal
+// is worse than a loud failure, so mark it and page a human.
+async function handleGenerationFailure(listingId, err) {
+  console.error(`[listing ${listingId}] content generation failed:`, err);
+  listingStatements.markGenerationFailed.run({ id: listingId });
+  const listing = listingStatements.getListing.get(listingId);
+  await slack.notifyHandoff({
+    lead: { name: listing.address, email: "", source: "listing-marketing" },
+    reason: `Content generation failed for this listing: ${err.message}. Needs a manual regenerate (or more complete facts).`,
+  });
+}
+
 // Re-run generation (e.g. after editing raw facts) without re-posting the listing.
 router.post("/listings/:id/regenerate", requireAdminAuth, async (req, res) => {
   const listing = listingStatements.getListing.get(req.params.id);
@@ -54,6 +68,7 @@ router.post("/listings/:id/regenerate", requireAdminAuth, async (req, res) => {
     await generateContentFor(listing.id);
     res.json(listingStatements.getListing.get(listing.id));
   } catch (err) {
+    await handleGenerationFailure(listing.id, err);
     res.status(502).json({ error: err.message });
   }
 });

@@ -10,7 +10,7 @@ db.exec(`
     sqft INTEGER,
     features TEXT,               -- freeform notes: "pool, updated kitchen, corner lot"
     photo_urls TEXT,              -- JSON array of image URLs
-    status TEXT NOT NULL DEFAULT 'new', -- new | generated | needs_review | published
+    status TEXT NOT NULL DEFAULT 'new', -- new | generated | needs_review | published | generation_failed
     description TEXT,
     social_instagram TEXT,
     social_facebook TEXT,
@@ -43,6 +43,9 @@ const listingStatements = {
   `),
   clearReview: db.prepare(`
     UPDATE listings SET status = 'generated', updated_at = datetime('now') WHERE id = @id
+  `),
+  markGenerationFailed: db.prepare(`
+    UPDATE listings SET status = 'generation_failed', updated_at = datetime('now') WHERE id = @id
   `),
   markPublished: db.prepare(`
     UPDATE listings SET status = 'published', updated_at = datetime('now') WHERE id = @id
