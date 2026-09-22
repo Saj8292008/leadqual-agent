@@ -8,6 +8,7 @@ const inspectRouter = require("./routes/inspect");
 const listingsRouter = require("./routes/listings");
 const transactionsRouter = require("./routes/transactions");
 const propertyManagementRouter = require("./routes/propertyManagement");
+const publicListingsRouter = require("./routes/publicListings");
 
 const app = express();
 app.use(express.json());
@@ -20,6 +21,7 @@ app.use(inspectRouter);
 app.use(listingsRouter);
 app.use(transactionsRouter);
 app.use(propertyManagementRouter);
+app.use(publicListingsRouter);
 
 const port = process.env.PORT || 3000;
 const server = app.listen(port, () => console.log(`leadqual-agent listening on :${port}`));

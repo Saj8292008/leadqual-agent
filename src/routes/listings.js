@@ -15,11 +15,14 @@ router.post("/webhooks/listing", async (req, res) => {
     return res.status(401).json({ error: "bad secret" });
   }
 
-  const { address, price, beds, baths, sqft, features, photo_urls } = req.body;
+  const { address, city, state, zip, price, beds, baths, sqft, features, photo_urls } = req.body;
   if (!address) return res.status(400).json({ error: "address is required" });
 
   const info = listingStatements.insertListing.run({
     address,
+    city: city || null,
+    state: state || null,
+    zip: zip || null,
     price: price || null,
     beds: beds || null,
     baths: baths || null,

@@ -4,6 +4,9 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS listings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     address TEXT NOT NULL,
+    city TEXT,
+    state TEXT,
+    zip TEXT,
     price TEXT,
     beds INTEGER,
     baths REAL,
@@ -24,11 +27,31 @@ db.exec(`
 
 const listingStatements = {
   insertListing: db.prepare(`
-    INSERT INTO listings (address, price, beds, baths, sqft, features, photo_urls)
-    VALUES (@address, @price, @beds, @baths, @sqft, @features, @photo_urls)
+    INSERT INTO listings (address, city, state, zip, price, beds, baths, sqft, features, photo_urls)
+    VALUES (@address, @city, @state, @zip, @price, @beds, @baths, @sqft, @features, @photo_urls)
   `),
   getListing: db.prepare(`SELECT * FROM listings WHERE id = ?`),
   listListings: db.prepare(`SELECT * FROM listings ORDER BY updated_at DESC`),
+  // Public-facing: only published listings, safe fields only (no internal
+  // status/fact-check/social-copy fields), optionally filtered by location.
+  publicListings: db.prepare(`
+    SELECT id, address, city, state, zip, price, beds, baths, sqft, description, photo_urls, updated_at
+    FROM listings
+    WHERE status = 'published'
+      AND (@city IS NULL OR city = @city COLLATE NOCASE)
+      AND (@state IS NULL OR state = @state COLLATE NOCASE)
+      AND (@zip IS NULL OR zip = @zip)
+    ORDER BY updated_at DESC
+  `),
+  publicListing: db.prepare(`
+    SELECT id, address, city, state, zip, price, beds, baths, sqft, description, photo_urls, updated_at
+    FROM listings WHERE id = ? AND status = 'published'
+  `),
+  distinctCities: db.prepare(`
+    SELECT DISTINCT city, state, COUNT(*) as count FROM listings
+    WHERE status = 'published' AND city IS NOT NULL
+    GROUP BY city, state ORDER BY city ASC
+  `),
   saveGeneratedContent: db.prepare(`
     UPDATE listings SET
       status = @status,
