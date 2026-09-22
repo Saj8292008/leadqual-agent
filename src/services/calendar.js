@@ -39,7 +39,7 @@ async function getAvailability({ days = 5 } = {}) {
 
 async function bookShowing({ lead, slot }) {
   const auth = getAuth();
-  const summary = `Showing: ${lead.name || "New lead"} (${lead.phone})`;
+  const summary = `Showing: ${lead.name || "New lead"} (${lead.email})`;
   const description = `Source: ${lead.source}\nBudget: ${lead.budget}\nTimeline: ${lead.timeline}\nMotivation: ${lead.motivation}`;
 
   if (!auth) {
