@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js",
     "drip": "node src/services/dripRunner.js",
     "transaction-reminders": "node src/services/transactionReminderRunner.js",
+    "property-reminders": "node src/services/propertyReminderRunner.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
