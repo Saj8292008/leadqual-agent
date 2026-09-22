@@ -1,6 +1,4 @@
-const Anthropic = require("@anthropic-ai/sdk");
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { callTool } = require("./llm");
 
 const SYSTEM_PROMPT = `You are Sam, a real estate agent's assistant, emailing with an inbound lead.
 Your only job: qualify the lead (budget, timeline, motivation/area) through a short, natural
@@ -21,7 +19,7 @@ Respond ONLY by calling the update_lead tool — no plain text.`;
 
 const UPDATE_LEAD_TOOL = {
   name: "update_lead",
-  description: "Record the qualification state and the next SMS reply to send to the lead.",
+  description: "Record the qualification state and the next email reply to send to the lead.",
   input_schema: {
     type: "object",
     properties: {
@@ -54,23 +52,11 @@ async function converse({ lead, history }) {
     `budget: ${lead.budget || "unknown"}, timeline: ${lead.timeline || "unknown"}, ` +
     `motivation: ${lead.motivation || "unknown"}, notes: ${lead.notes || "none"}.`;
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-5",
-    max_tokens: 500,
+  return callTool({
     system: SYSTEM_PROMPT,
-    tools: [UPDATE_LEAD_TOOL],
-    tool_choice: { type: "tool", name: "update_lead" },
-    messages: [
-      {
-        role: "user",
-        content: `${leadContext}\n\nConversation so far:\n${transcript || "(no messages yet — this is the first outbound touch)"}`,
-      },
-    ],
+    user: `${leadContext}\n\nConversation so far:\n${transcript || "(no messages yet — this is the first outbound touch)"}`,
+    tool: UPDATE_LEAD_TOOL,
   });
-
-  const toolUse = response.content.find((c) => c.type === "tool_use");
-  if (!toolUse) throw new Error("Claude did not return a tool call");
-  return toolUse.input;
 }
 
 module.exports = { converse };

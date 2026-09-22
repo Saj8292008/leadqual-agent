@@ -1,6 +1,4 @@
-const Anthropic = require("@anthropic-ai/sdk");
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { callTool } = require("./llm");
 
 const SYSTEM_PROMPT = `You are a real estate marketing copywriter. Given raw listing facts, produce
 the full marketing package for a new listing going to market. Never invent facts not given to you
@@ -50,18 +48,11 @@ async function generate(listing) {
     .filter(Boolean)
     .join("\n");
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-5",
-    max_tokens: 1200,
+  return callTool({
     system: SYSTEM_PROMPT,
-    tools: [TOOL],
-    tool_choice: { type: "tool", name: "generate_listing_content" },
-    messages: [{ role: "user", content: `Listing facts:\n${facts}` }],
+    user: `Listing facts:\n${facts}`,
+    tool: TOOL,
   });
-
-  const toolUse = response.content.find((c) => c.type === "tool_use");
-  if (!toolUse) throw new Error("Claude did not return a tool call");
-  return toolUse.input;
 }
 
 module.exports = { generate };
