@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "drip": "node src/services/dripRunner.js",
+    "transaction-reminders": "node src/services/transactionReminderRunner.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
