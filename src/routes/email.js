@@ -4,6 +4,15 @@ const { runTurn, confirmBooking } = require("../services/conversationEngine");
 
 const router = express.Router();
 
+// Real mail clients send "From: Display Name <addr@example.com>", not a
+// bare address — pull just the address out, or fall back to the raw value
+// if it's already bare.
+function extractEmailAddress(from) {
+  if (typeof from !== "string") return from;
+  const match = from.match(/<([^>]+)>/);
+  return (match ? match[1] : from).trim();
+}
+
 // AgentMail webhook — register with:
 //   POST https://api.agentmail.to/v0/webhooks
 //   { "url": "<this>/webhooks/email", "event_types": ["message.received"], "inbox_ids": [AGENTMAIL_INBOX_ID] }
@@ -14,7 +23,7 @@ router.post("/webhooks/email", async (req, res) => {
   if (evt.event_type !== "message.received") return;
 
   const msg = evt.message;
-  const from = msg.from;
+  const from = extractEmailAddress(msg.from);
   const body = (msg.text || "").trim();
 
   const lead = statements.findLeadByEmail.get(from);
@@ -59,3 +68,4 @@ router.post("/webhooks/email", async (req, res) => {
 });
 
 module.exports = router;
+module.exports.extractEmailAddress = extractEmailAddress;

@@ -1,7 +1,10 @@
 const path = require("path");
 const Database = require("better-sqlite3");
 
-const db = new Database(path.join(__dirname, "..", "..", "data.sqlite"));
+// DATA_DIR points at a mounted persistent volume in production (e.g. Fly.io);
+// defaults to the project root for local dev.
+const dataDir = process.env.DATA_DIR || path.join(__dirname, "..", "..");
+const db = new Database(path.join(dataDir, "data.sqlite"));
 db.pragma("journal_mode = WAL");
 
 db.exec(`
@@ -43,7 +46,7 @@ const statements = {
     INSERT INTO leads (source, name, email, status, notes)
     VALUES (@source, @name, @email, 'new', @notes)
   `),
-  findLeadByEmail: db.prepare(`SELECT * FROM leads WHERE email = ?`),
+  findLeadByEmail: db.prepare(`SELECT * FROM leads WHERE email = ? COLLATE NOCASE`),
   getLead: db.prepare(`SELECT * FROM leads WHERE id = ?`),
   listLeads: db.prepare(`SELECT * FROM leads ORDER BY updated_at DESC`),
   messageByMessageId: db.prepare(`SELECT * FROM messages WHERE message_id = ?`),
