@@ -65,20 +65,22 @@ const transactionStatements = {
     UPDATE transactions SET status = @status, updated_at = datetime('now') WHERE id = @id
   `),
   // Pending (not completed) milestones due within the given days, that haven't been reminded yet today.
+  // due_date is a local calendar date, so compare against the local date — plain date('now') is UTC,
+  // which would flag a deadline as overdue while it's still "due today" locally (daysUntil() is local too).
   milestonesNeedingReminder: db.prepare(`
     SELECT m.*, t.address, t.buyer_email, t.seller_email FROM transaction_milestones m
     JOIN transactions t ON t.id = m.transaction_id
     WHERE m.completed_at IS NULL
       AND t.status = 'active'
-      AND date(m.due_date) <= date('now', '+' || ? || ' days')
-      AND (m.last_reminder_sent_at IS NULL OR date(m.last_reminder_sent_at) < date('now'))
+      AND date(m.due_date) <= date('now', 'localtime', '+' || ? || ' days')
+      AND (m.last_reminder_sent_at IS NULL OR date(m.last_reminder_sent_at, 'localtime') < date('now', 'localtime'))
   `),
   milestonesOverdue: db.prepare(`
     SELECT m.*, t.address FROM transaction_milestones m
     JOIN transactions t ON t.id = m.transaction_id
     WHERE m.completed_at IS NULL
       AND t.status = 'active'
-      AND date(m.due_date) < date('now')
+      AND date(m.due_date) < date('now', 'localtime')
       AND m.missed_alert_sent_at IS NULL
   `),
   markReminderSent: db.prepare(`

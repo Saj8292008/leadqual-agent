@@ -5,7 +5,9 @@ const { daysUntil } = require("../src/services/transactionReminders");
 function isoDaysFromNow(days) {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  // Local calendar date, matching daysUntil() — toISOString() is UTC and
+  // rolls over to tomorrow in the evening for timezones west of UTC.
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 test("daysUntil returns 0 for today", () => {
