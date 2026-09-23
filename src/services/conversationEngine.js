@@ -31,7 +31,23 @@ async function runTurn(leadId) {
   const lead = statements.getLead.get(leadId);
   const history = statements.historyForLead.all(leadId);
 
-  const decision = await claude.converse({ lead, history });
+  let decision;
+  try {
+    decision = await claude.converse({ lead, history });
+  } catch (err) {
+    // If the model can't produce a reply (provider down, timeouts, bad
+    // output after retries), the lead would otherwise sit unanswered with
+    // nothing ever retrying it — observed end-to-end with a lead who was
+    // pre-approved and asking for a showing. Hand them to a human instead.
+    statements.updateLead.run({ ...lead, status: "handoff", next_followup_at: null });
+    slack
+      .notifyHandoff({
+        lead: statements.getLead.get(lead.id),
+        reason: `AI couldn't generate a reply (${err.message}) — please respond manually`,
+      })
+      .catch((slackErr) => console.error(`[handoff] slack alert failed for lead ${lead.id}:`, slackErr));
+    throw err;
+  }
 
   const updated = {
     id: lead.id,
