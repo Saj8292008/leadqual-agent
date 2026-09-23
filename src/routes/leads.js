@@ -1,4 +1,5 @@
 const express = require("express");
+const { isValidWebhookSecret } = require("../middleware/webhookAuth");
 const { statements } = require("../db");
 const { runTurn } = require("../services/conversationEngine");
 
@@ -9,7 +10,7 @@ const router = express.Router();
 // shape to { source, name, phone, email, notes } before forwarding, or add
 // a source-specific adapter below if the payload needs field mapping.
 router.post("/webhooks/lead", async (req, res) => {
-  if (req.headers["x-webhook-secret"] !== process.env.LEAD_WEBHOOK_SECRET) {
+  if (!isValidWebhookSecret(req)) {
     return res.status(401).json({ error: "bad secret" });
   }
 

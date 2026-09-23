@@ -1,4 +1,5 @@
 const express = require("express");
+const { isValidWebhookSecret } = require("../middleware/webhookAuth");
 const { propertyStatements } = require("../db/propertyManagement");
 const { triage } = require("../services/maintenanceTriage");
 const { dispatch } = require("../services/vendorDispatch");
@@ -8,7 +9,7 @@ const slack = require("../services/slack");
 const router = express.Router();
 
 function checkWebhookSecret(req, res) {
-  if (req.headers["x-webhook-secret"] !== process.env.LEAD_WEBHOOK_SECRET) {
+  if (!isValidWebhookSecret(req)) {
     res.status(401).json({ error: "bad secret" });
     return false;
   }

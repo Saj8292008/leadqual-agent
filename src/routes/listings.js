@@ -1,4 +1,5 @@
 const express = require("express");
+const { isValidWebhookSecret } = require("../middleware/webhookAuth");
 const { listingStatements } = require("../db/listings");
 const listingContent = require("../services/listingContent");
 const { renderFlyerHtml } = require("../services/flyer");
@@ -11,7 +12,7 @@ const router = express.Router();
 // Intake for a new listing going to market. Point your MLS export, a
 // spreadsheet-to-webhook (Zapier), or a manual form here.
 router.post("/webhooks/listing", async (req, res) => {
-  if (req.headers["x-webhook-secret"] !== process.env.LEAD_WEBHOOK_SECRET) {
+  if (!isValidWebhookSecret(req)) {
     return res.status(401).json({ error: "bad secret" });
   }
 

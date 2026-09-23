@@ -1,4 +1,5 @@
 const express = require("express");
+const { isValidWebhookSecret } = require("../middleware/webhookAuth");
 const { transactionStatements, createTransactionWithMilestones } = require("../db/transactions");
 const { requireAdminAuth } = require("../middleware/adminAuth");
 
@@ -8,7 +9,7 @@ const router = express.Router();
 // contract. Any of the deadline fields left blank simply won't get a
 // tracked milestone (e.g. a cash deal might skip financing).
 router.post("/webhooks/transaction", (req, res) => {
-  if (req.headers["x-webhook-secret"] !== process.env.LEAD_WEBHOOK_SECRET) {
+  if (!isValidWebhookSecret(req)) {
     return res.status(401).json({ error: "bad secret" });
   }
 
