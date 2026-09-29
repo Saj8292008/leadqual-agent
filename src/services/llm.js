@@ -81,7 +81,11 @@ async function callOpenAiCompatible({ system, user, tool }) {
     clearTimeout(timeout);
   }
 
-  if (!res.ok) throw new Error(`${OPENAI_COMPATIBLE_MODEL} request failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const err = new Error(`${OPENAI_COMPATIBLE_MODEL} request failed: ${res.status} ${await res.text()}`);
+    if (res.status === 429) err.retryAfterMs = retryAfterMs(res.headers.get("retry-after"));
+    throw err;
+  }
   const data = await res.json();
   const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
   if (!toolCall) throw new Error(`${OPENAI_COMPATIBLE_MODEL} did not return a tool call`);
@@ -109,6 +113,16 @@ function validateAgainstSchema(args, tool) {
   return null;
 }
 
+// Hosted providers' free tiers (observed: Groq, 1000 output tokens/min) answer
+// bursts with 429 + retry-after. Retrying instantly just burns every attempt,
+// so wait what the provider asks — capped so one turn can't stall for minutes.
+const MAX_RATE_LIMIT_WAIT_MS = 20000;
+
+function retryAfterMs(header) {
+  const seconds = Number(header);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, MAX_RATE_LIMIT_WAIT_MS) : 2000;
+}
+
 async function callOpenAiCompatibleWithRetry({ system, user, tool }) {
   let lastError;
   for (let attempt = 1; attempt <= OPENAI_COMPATIBLE_MAX_RETRIES; attempt++) {
@@ -121,6 +135,9 @@ async function callOpenAiCompatibleWithRetry({ system, user, tool }) {
       );
     } catch (err) {
       lastError = err;
+      if (err.retryAfterMs && attempt < OPENAI_COMPATIBLE_MAX_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, err.retryAfterMs));
+      }
     }
   }
   throw lastError;
