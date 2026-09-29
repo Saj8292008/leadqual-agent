@@ -1,6 +1,7 @@
 const express = require("express");
 const { statements } = require("../db");
 const { runTurn, confirmBooking } = require("../services/conversationEngine");
+const { isValidAgentMailSignature } = require("../middleware/webhookAuth");
 
 const router = express.Router();
 
@@ -16,7 +17,11 @@ function extractEmailAddress(from) {
 // AgentMail webhook — register with:
 //   POST https://api.agentmail.to/v0/webhooks
 //   { "url": "<this>/webhooks/email", "event_types": ["message.received"], "inbox_ids": [AGENTMAIL_INBOX_ID] }
+// and put the returned whsec_ secret in AGENTMAIL_WEBHOOK_SECRET.
 router.post("/webhooks/email", async (req, res) => {
+  if (!isValidAgentMailSignature(req)) {
+    return res.status(401).json({ error: "bad signature" });
+  }
   res.status(200).json({ ok: true }); // ack immediately, work happens async
 
   const evt = req.body;

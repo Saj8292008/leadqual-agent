@@ -11,7 +11,9 @@ const propertyManagementRouter = require("./routes/propertyManagement");
 const publicListingsRouter = require("./routes/publicListings");
 
 const app = express();
-app.use(express.json());
+// Keep the exact bytes too: webhook signatures (AgentMail/Svix) are computed
+// over the raw body, and re-serializing parsed JSON wouldn't match.
+app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
