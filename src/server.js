@@ -9,6 +9,7 @@ const listingsRouter = require("./routes/listings");
 const transactionsRouter = require("./routes/transactions");
 const propertyManagementRouter = require("./routes/propertyManagement");
 const publicListingsRouter = require("./routes/publicListings");
+const calendarConnectRouter = require("./routes/calendarConnect");
 
 const app = express();
 // Keep the exact bytes too: webhook signatures (AgentMail/Svix) are computed
@@ -24,6 +25,7 @@ app.use(listingsRouter);
 app.use(transactionsRouter);
 app.use(propertyManagementRouter);
 app.use(publicListingsRouter);
+app.use(calendarConnectRouter);
 
 const port = process.env.PORT || 3000;
 const server = app.listen(port, () => console.log(`leadqual-agent listening on :${port}`));

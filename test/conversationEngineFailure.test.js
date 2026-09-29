@@ -45,3 +45,34 @@ test("a failed model call hands the lead to a human instead of silently dropping
   assert.equal(sent[0].lead.id, leadId);
   assert.match(sent[0].reason, /couldn't generate a reply.*timed out/);
 });
+
+test("a calendar failure while booking hands the lead to a human", async () => {
+  // A disconnected/expired Google Calendar must not leave a ready-to-book
+  // lead waiting on slots that never arrive.
+  const calendar = require("../src/services/calendar");
+  const { offerShowingSlots, confirmBooking } = require("../src/services/conversationEngine");
+
+  for (const [label, run] of [
+    ["offering slots", (id) => offerShowingSlots(id)],
+    ["confirming a pick", (id) => confirmBooking(id, 1)],
+  ]) {
+    const info = statements.insertLead.run({ source: "zillow", name: `Cal ${label}`, email: `cal-${label.replace(/ /g, "-")}@example.com`, notes: null });
+    const leadId = info.lastInsertRowid;
+    const originalAvail = calendar.getAvailability;
+    const originalNotify = alerts.notifyHandoff;
+    const sent = [];
+    calendar.getAvailability = async () => {
+      throw new Error("invalid_grant");
+    };
+    alerts.notifyHandoff = async (args) => sent.push(args);
+    try {
+      await assert.rejects(run(leadId), /invalid_grant/);
+    } finally {
+      calendar.getAvailability = originalAvail;
+      alerts.notifyHandoff = originalNotify;
+    }
+    assert.equal(statements.getLead.get(leadId).status, "handoff", label);
+    assert.equal(sent.length, 1, label);
+    assert.match(sent[0].reason, /Calendar unavailable.*invalid_grant/, label);
+  }
+});

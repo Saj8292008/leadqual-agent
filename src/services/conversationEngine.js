@@ -98,9 +98,28 @@ function lastInboundMessageId(leadId) {
   return lastInbound ? lastInbound.message_id : null;
 }
 
+// A calendar failure (agent revoked access, Google token expired) after the
+// lead was just told "I'll send some times" must reach a human, not vanish.
+function handOffForCalendarFailure(leadId, err) {
+  const lead = statements.getLead.get(leadId);
+  statements.updateLead.run({ ...lead, status: "handoff", next_followup_at: null });
+  alerts
+    .notifyHandoff({
+      lead: statements.getLead.get(leadId),
+      reason: `Calendar unavailable (${err.message}) — lead is ready to book a showing; schedule it manually and check the calendar connection`,
+    })
+    .catch((alertErr) => console.error(`[handoff] alert failed for lead ${leadId}:`, alertErr));
+}
+
 async function offerShowingSlots(leadId) {
   const lead = statements.getLead.get(leadId);
-  const slots = await calendar.getAvailability({ days: 5 });
+  let slots;
+  try {
+    slots = await calendar.getAvailability({ days: 5 });
+  } catch (err) {
+    handOffForCalendarFailure(leadId, err);
+    throw err;
+  }
   if (!slots.length) return;
 
   const formatted = slots
@@ -122,7 +141,13 @@ async function offerShowingSlots(leadId) {
 // Called when the lead replies with a slot number after offerShowingSlots.
 async function confirmBooking(leadId, slotIndex) {
   const lead = statements.getLead.get(leadId);
-  const slots = await calendar.getAvailability({ days: 5 });
+  let slots;
+  try {
+    slots = await calendar.getAvailability({ days: 5 });
+  } catch (err) {
+    handOffForCalendarFailure(leadId, err);
+    throw err;
+  }
   const slot = slots[slotIndex - 1];
   const subject = subjectFor(lead);
 
@@ -133,7 +158,13 @@ async function confirmBooking(leadId, slotIndex) {
     return null;
   }
 
-  const event = await calendar.bookShowing({ lead, slot });
+  let event;
+  try {
+    event = await calendar.bookShowing({ lead, slot });
+  } catch (err) {
+    handOffForCalendarFailure(leadId, err);
+    throw err;
+  }
   statements.updateLead.run({ ...lead, status: "booked", next_followup_at: null });
 
   const body = `You're all set — showing confirmed for ${new Date(slot.start).toLocaleString("en-US", { weekday: "long", hour: "numeric", minute: "2-digit" })}. See you then!\n\n— Sam`;
