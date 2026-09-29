@@ -33,7 +33,7 @@ function oauthConfigured() {
 
 // The agent opens this link (with ?key=ADMIN_SECRET) and is sent to Google to
 // let the app see their free/busy time and add showings to their calendar.
-router.get("/connect/calendar", requireAdminAuth, (req, res) => {
+router.get("/connect/calendar", requireAdminAuth, async (req, res) => {
   if (!oauthConfigured()) {
     return res.status(500).send(page("Calendar connection isn't set up",
       "<p>GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and PUBLIC_BASE_URL must be configured first.</p>"));
@@ -41,7 +41,7 @@ router.get("/connect/calendar", requireAdminAuth, (req, res) => {
   // One-time state value ties Google's redirect back to a link the agent
   // actually opened, so nobody can connect their own calendar in its place.
   const state = crypto.randomBytes(24).toString("hex");
-  setSetting(OAUTH_STATE_KEY, { state, created_at: Date.now() });
+  await setSetting(OAUTH_STATE_KEY, { state, created_at: Date.now() });
   res.redirect(
     calendar.oauthClient().generateAuthUrl({
       access_type: "offline",
@@ -53,7 +53,7 @@ router.get("/connect/calendar", requireAdminAuth, (req, res) => {
 });
 
 router.get("/connect/calendar/callback", async (req, res) => {
-  const pending = getSetting(OAUTH_STATE_KEY);
+  const pending = await getSetting(OAUTH_STATE_KEY);
   const stateOk =
     pending &&
     typeof req.query.state === "string" &&
@@ -63,7 +63,7 @@ router.get("/connect/calendar/callback", async (req, res) => {
   if (!stateOk) {
     return res.status(400).send(page("Link expired", "<p>Open the connect link again to retry.</p>"));
   }
-  deleteSetting(OAUTH_STATE_KEY);
+  await deleteSetting(OAUTH_STATE_KEY);
 
   if (req.query.error || !req.query.code) {
     return res.status(400).send(page("Calendar not connected",
@@ -78,7 +78,7 @@ router.get("/connect/calendar/callback", async (req, res) => {
     const email = tokens.id_token
       ? JSON.parse(Buffer.from(tokens.id_token.split(".")[1], "base64url").toString()).email
       : null;
-    setSetting(calendar.CALENDAR_CONNECTION_KEY, {
+    await setSetting(calendar.CALENDAR_CONNECTION_KEY, {
       refresh_token: tokens.refresh_token,
       email,
       connected_at: new Date().toISOString(),
@@ -91,21 +91,21 @@ router.get("/connect/calendar/callback", async (req, res) => {
   }
 });
 
-router.get("/connect/calendar/status", requireAdminAuth, (req, res) => {
-  const connection = getSetting(calendar.CALENDAR_CONNECTION_KEY);
+router.get("/connect/calendar/status", requireAdminAuth, async (req, res) => {
+  const connection = await getSetting(calendar.CALENDAR_CONNECTION_KEY);
   res.json(connection
     ? { connected: true, email: connection.email, connected_at: connection.connected_at }
     : { connected: false });
 });
 
 router.post("/connect/calendar/disconnect", requireAdminAuth, async (req, res) => {
-  const connection = getSetting(calendar.CALENDAR_CONNECTION_KEY);
+  const connection = await getSetting(calendar.CALENDAR_CONNECTION_KEY);
   if (connection?.refresh_token) {
     await calendar.oauthClient().revokeToken(connection.refresh_token).catch((err) =>
       console.error("[calendar] token revoke failed (removing locally anyway):", err.message)
     );
   }
-  deleteSetting(calendar.CALENDAR_CONNECTION_KEY);
+  await deleteSetting(calendar.CALENDAR_CONNECTION_KEY);
   res.json({ connected: false });
 });
 

@@ -1,11 +1,11 @@
-// Run on a schedule (cron, Railway cron, etc.) to nudge leads sitting in
+// Run on a schedule (Vercel Cron via /cron/*, or cron locally) to nudge leads sitting in
 // nurture whose next_followup_at has passed. `npm run drip`
 require("dotenv").config();
 const { statements } = require("../db");
 const { runTurn } = require("./conversationEngine");
 
 async function main() {
-  const due = statements.leadsDueForDrip.all();
+  const due = await statements.leadsDueForDrip.all();
   console.log(`[drip] ${due.length} lead(s) due for follow-up`);
   for (const lead of due) {
     try {

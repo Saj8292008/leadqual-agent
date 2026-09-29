@@ -1,5 +1,5 @@
-// Run daily (cron, Railway cron, etc.) to send upcoming-deadline reminders
-// and alert Slack on anything overdue. `npm run transaction-reminders`
+// Run daily (Vercel Cron via /cron/*, or cron locally) to send upcoming-deadline reminders
+// and alert the agent about anything overdue. `npm run transaction-reminders`
 require("dotenv").config();
 const { sendReminders, alertOverdue } = require("./transactionReminders");
 

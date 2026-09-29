@@ -1,13 +1,10 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { daysUntil } = require("../src/services/transactionReminders");
+const { daysUntil, localDate } = require("../src/lib/time");
 
+// The agent's local calendar date `days` from now (same basis as daysUntil).
 function isoDaysFromNow(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  // Local calendar date, matching daysUntil() — toISOString() is UTC and
-  // rolls over to tomorrow in the evening for timezones west of UTC.
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return localDate(new Date(Date.now() + days * 24 * 60 * 60 * 1000));
 }
 
 test("daysUntil returns 0 for today", () => {
@@ -20,4 +17,14 @@ test("daysUntil returns a positive count for a future date", () => {
 
 test("daysUntil returns a negative count for a past date", () => {
   assert.equal(daysUntil(isoDaysFromNow(-2)), -2);
+});
+
+test("daysUntil counts in the agent's timezone, not the server's (UTC on Vercel)", () => {
+  process.env.AGENT_TIMEZONE = "America/Chicago";
+  // 9pm Central on Sep 28 is already Sep 29 in UTC. A deadline of Sep 28
+  // is still due today for the agent, not one day overdue.
+  const evening = new Date("2026-09-29T02:00:00Z");
+  assert.equal(localDate(evening), "2026-09-28");
+  assert.equal(daysUntil("2026-09-28", evening), 0);
+  assert.equal(daysUntil("2026-09-29", evening), 1);
 });

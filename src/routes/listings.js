@@ -1,4 +1,5 @@
 const express = require("express");
+const { inBackground } = require("../lib/background");
 const { isValidWebhookSecret } = require("../middleware/webhookAuth");
 const { listingStatements } = require("../db/listings");
 const listingContent = require("../services/listingContent");
@@ -19,7 +20,7 @@ router.post("/webhooks/listing", async (req, res) => {
   const { address, city, state, zip, price, beds, baths, sqft, features, photo_urls } = req.body;
   if (!address) return res.status(400).json({ error: "address is required" });
 
-  const info = listingStatements.insertListing.run({
+  const info = await listingStatements.insertListing.run({
     address,
     city: city || null,
     state: state || null,
@@ -34,16 +35,16 @@ router.post("/webhooks/listing", async (req, res) => {
 
   res.status(201).json({ id: info.lastInsertRowid });
 
-  generateContentFor(info.lastInsertRowid).catch((err) =>
-    handleGenerationFailure(info.lastInsertRowid, err)
+  inBackground(
+    generateContentFor(info.lastInsertRowid).catch((err) => handleGenerationFailure(info.lastInsertRowid, err))
   );
 });
 
 async function generateContentFor(listingId) {
-  const listing = listingStatements.getListing.get(listingId);
+  const listing = await listingStatements.getListing.get(listingId);
   const content = await listingContent.generate(listing);
   const flags = checkContent(content, listing);
-  listingStatements.saveGeneratedContent.run({
+  await listingStatements.saveGeneratedContent.run({
     id: listingId,
     ...content,
     status: flags.length ? "needs_review" : "generated",
@@ -56,8 +57,8 @@ async function generateContentFor(listingId) {
 // is worse than a loud failure, so mark it and page a human.
 async function handleGenerationFailure(listingId, err) {
   console.error(`[listing ${listingId}] content generation failed:`, err);
-  listingStatements.markGenerationFailed.run({ id: listingId });
-  const listing = listingStatements.getListing.get(listingId);
+  await listingStatements.markGenerationFailed.run({ id: listingId });
+  const listing = await listingStatements.getListing.get(listingId);
   await alerts.notifyHandoff({
     lead: { name: listing.address, email: "", source: "listing-marketing" },
     reason: `Content generation failed for this listing: ${err.message}. Needs a manual regenerate (or more complete facts).`,
@@ -66,29 +67,29 @@ async function handleGenerationFailure(listingId, err) {
 
 // Re-run generation (e.g. after editing raw facts) without re-posting the listing.
 router.post("/listings/:id/regenerate", requireAdminAuth, async (req, res) => {
-  const listing = listingStatements.getListing.get(req.params.id);
+  const listing = await listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
   try {
     await generateContentFor(listing.id);
-    res.json(listingStatements.getListing.get(listing.id));
+    res.json(await listingStatements.getListing.get(listing.id));
   } catch (err) {
     await handleGenerationFailure(listing.id, err);
     res.status(502).json({ error: err.message });
   }
 });
 
-router.get("/listings", requireAdminAuth, (req, res) => {
-  res.json(listingStatements.listListings.all());
+router.get("/listings", requireAdminAuth, async (req, res) => {
+  res.json(await listingStatements.listListings.all());
 });
 
-router.get("/listings/:id", requireAdminAuth, (req, res) => {
-  const listing = listingStatements.getListing.get(req.params.id);
+router.get("/listings/:id", requireAdminAuth, async (req, res) => {
+  const listing = await listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
   res.json(listing);
 });
 
-router.get("/listings/:id/flyer", requireAdminAuth, (req, res) => {
-  const listing = listingStatements.getListing.get(req.params.id);
+router.get("/listings/:id/flyer", requireAdminAuth, async (req, res) => {
+  const listing = await listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).send("not found");
   res.set("Content-Type", "text/html");
   res.send(renderFlyerHtml(listing));
@@ -96,18 +97,18 @@ router.get("/listings/:id/flyer", requireAdminAuth, (req, res) => {
 
 // Clear a needs_review flag after a human has checked the flagged claims —
 // either the copy gets edited first, or this just confirms it's fine as-is.
-router.post("/listings/:id/clear-review", requireAdminAuth, (req, res) => {
-  const listing = listingStatements.getListing.get(req.params.id);
+router.post("/listings/:id/clear-review", requireAdminAuth, async (req, res) => {
+  const listing = await listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
   if (listing.status !== "needs_review") {
     return res.status(400).json({ error: "listing is not pending review" });
   }
-  listingStatements.clearReview.run({ id: listing.id });
-  res.json(listingStatements.getListing.get(listing.id));
+  await listingStatements.clearReview.run({ id: listing.id });
+  res.json(await listingStatements.getListing.get(listing.id));
 });
 
-router.post("/listings/:id/publish", requireAdminAuth, (req, res) => {
-  const listing = listingStatements.getListing.get(req.params.id);
+router.post("/listings/:id/publish", requireAdminAuth, async (req, res) => {
+  const listing = await listingStatements.getListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
   if (listing.status === "needs_review") {
     return res.status(400).json({
@@ -118,7 +119,7 @@ router.post("/listings/:id/publish", requireAdminAuth, (req, res) => {
   if (listing.status !== "generated") {
     return res.status(400).json({ error: "content not generated yet" });
   }
-  listingStatements.markPublished.run({ id: listing.id });
+  await listingStatements.markPublished.run({ id: listing.id });
   res.json({ ok: true });
 });
 

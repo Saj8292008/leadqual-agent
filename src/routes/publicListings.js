@@ -16,9 +16,9 @@ router.use("/public", (req, res, next) => {
 // area" surface for the website. Only ever returns published listings,
 // and only the fields safe to show a visitor (no internal status, no
 // fact-check flags, no unpublished social copy).
-router.get("/public/listings", (req, res) => {
+router.get("/public/listings", async (req, res) => {
   const { city, state, zip } = req.query;
-  const rows = listingStatements.publicListings.all({
+  const rows = await listingStatements.publicListings.all({
     city: city || null,
     state: state || null,
     zip: zip || null,
@@ -26,16 +26,16 @@ router.get("/public/listings", (req, res) => {
   res.json(rows.map(formatListing));
 });
 
-router.get("/public/listings/:id", (req, res) => {
-  const listing = listingStatements.publicListing.get(req.params.id);
+router.get("/public/listings/:id", async (req, res) => {
+  const listing = await listingStatements.publicListing.get(req.params.id);
   if (!listing) return res.status(404).json({ error: "not found" });
   res.json(formatListing(listing));
 });
 
 // Powers a "browse by area" picker on the site without the visitor having
 // to already know what to search for.
-router.get("/public/areas", (req, res) => {
-  res.json(listingStatements.distinctCities.all());
+router.get("/public/areas", async (req, res) => {
+  res.json(await listingStatements.distinctCities.all());
 });
 
 function formatListing(listing) {

@@ -1,13 +1,6 @@
-const path = require("path");
-const Database = require("better-sqlite3");
+const { client, schema, addColumnIfMissing, prepare } = require("./client");
 
-// DATA_DIR points at a mounted persistent volume in production (e.g. Fly.io);
-// defaults to the project root for local dev.
-const dataDir = process.env.DATA_DIR || path.join(__dirname, "..", "..");
-const db = new Database(path.join(dataDir, "data.sqlite"));
-db.pragma("journal_mode = WAL");
-
-db.exec(`
+schema(`
   CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
@@ -20,6 +13,7 @@ db.exec(`
     notes TEXT,
     thread_id TEXT,
     next_followup_at TEXT,
+    offered_slots TEXT,                      -- JSON [{start,end}] last emailed to the lead, so a numeric pick books exactly what they saw
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -41,16 +35,19 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id);
 `);
 
+// Databases created before the column existed.
+addColumnIfMissing("leads", "offered_slots", "TEXT");
+
 const statements = {
-  insertLead: db.prepare(`
+  insertLead: prepare(`
     INSERT INTO leads (source, name, email, status, notes)
     VALUES (@source, @name, @email, 'new', @notes)
   `),
-  findLeadByEmail: db.prepare(`SELECT * FROM leads WHERE email = ? COLLATE NOCASE`),
-  getLead: db.prepare(`SELECT * FROM leads WHERE id = ?`),
-  listLeads: db.prepare(`SELECT * FROM leads ORDER BY updated_at DESC`),
-  messageByMessageId: db.prepare(`SELECT * FROM messages WHERE message_id = ?`),
-  updateLead: db.prepare(`
+  findLeadByEmail: prepare(`SELECT * FROM leads WHERE email = ? COLLATE NOCASE`),
+  getLead: prepare(`SELECT * FROM leads WHERE id = ?`),
+  listLeads: prepare(`SELECT * FROM leads ORDER BY updated_at DESC`),
+  messageByMessageId: prepare(`SELECT * FROM messages WHERE message_id = ?`),
+  updateLead: prepare(`
     UPDATE leads SET
       status = @status,
       budget = @budget,
@@ -62,18 +59,19 @@ const statements = {
       updated_at = datetime('now')
     WHERE id = @id
   `),
-  insertMessage: db.prepare(`
+  insertMessage: prepare(`
     INSERT INTO messages (lead_id, direction, channel, subject, body, message_id)
     VALUES (@lead_id, @direction, @channel, @subject, @body, @message_id)
   `),
-  historyForLead: db.prepare(`
+  historyForLead: prepare(`
     SELECT direction, channel, subject, body, message_id, created_at FROM messages
     WHERE lead_id = ? ORDER BY created_at ASC
   `),
-  leadsDueForDrip: db.prepare(`
+  setOfferedSlots: prepare(`UPDATE leads SET offered_slots = @offered_slots WHERE id = @id`),
+  leadsDueForDrip: prepare(`
     SELECT * FROM leads
-    WHERE status = 'nurture' AND next_followup_at <= datetime('now')
+    WHERE status = 'nurture' AND datetime(next_followup_at) <= datetime('now')
   `),
 };
 
-module.exports = { db, statements };
+module.exports = { client, statements };

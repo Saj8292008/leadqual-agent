@@ -5,6 +5,7 @@ const os = require("os");
 const path = require("path");
 
 // Isolated DB for this test file (node --test runs each file in its own process).
+process.env.AGENT_TIMEZONE = "America/Chicago";
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "leadqual-test-"));
 
 const { statements } = require("../src/db");
@@ -15,7 +16,7 @@ const { runTurn } = require("../src/services/conversationEngine");
 test("a failed model call hands the lead to a human instead of silently dropping them", async () => {
   // Regression: observed end-to-end — every provider attempt timed out, the
   // lead stayed 'qualifying' with no reply, no retry, and no human alerted.
-  const info = statements.insertLead.run({
+  const info = await statements.insertLead.run({
     source: "zillow",
     name: "Jordan Lee",
     email: "jordan@example.com",
@@ -38,7 +39,7 @@ test("a failed model call hands the lead to a human instead of silently dropping
     alerts.notifyHandoff = originalNotify;
   }
 
-  const lead = statements.getLead.get(leadId);
+  const lead = await statements.getLead.get(leadId);
   assert.equal(lead.status, "handoff");
   assert.equal(lead.next_followup_at, null);
   assert.equal(sent.length, 1);
@@ -51,28 +52,69 @@ test("a calendar failure while booking hands the lead to a human", async () => {
   // lead waiting on slots that never arrive.
   const calendar = require("../src/services/calendar");
   const { offerShowingSlots, confirmBooking } = require("../src/services/conversationEngine");
+  const slot = { start: "2026-09-29T15:00:00.000Z", end: "2026-09-29T16:00:00.000Z" };
 
-  for (const [label, run] of [
-    ["offering slots", (id) => offerShowingSlots(id)],
-    ["confirming a pick", (id) => confirmBooking(id, 1)],
+  for (const [label, failingCall, run] of [
+    ["offering slots", "getAvailability", (id) => offerShowingSlots(id)],
+    ["confirming a pick", "bookShowing", async (id) => {
+      await statements.setOfferedSlots.run({ id, offered_slots: JSON.stringify([slot]) });
+      return confirmBooking(id, 1);
+    }],
   ]) {
-    const info = statements.insertLead.run({ source: "zillow", name: `Cal ${label}`, email: `cal-${label.replace(/ /g, "-")}@example.com`, notes: null });
+    const info = await statements.insertLead.run({ source: "zillow", name: `Cal ${label}`, email: `cal-${label.replace(/ /g, "-")}@example.com`, notes: null });
     const leadId = info.lastInsertRowid;
-    const originalAvail = calendar.getAvailability;
+    const originalCall = calendar[failingCall];
     const originalNotify = alerts.notifyHandoff;
     const sent = [];
-    calendar.getAvailability = async () => {
+    calendar[failingCall] = async () => {
       throw new Error("invalid_grant");
     };
     alerts.notifyHandoff = async (args) => sent.push(args);
     try {
       await assert.rejects(run(leadId), /invalid_grant/);
     } finally {
-      calendar.getAvailability = originalAvail;
+      calendar[failingCall] = originalCall;
       alerts.notifyHandoff = originalNotify;
     }
-    assert.equal(statements.getLead.get(leadId).status, "handoff", label);
+    assert.equal((await statements.getLead.get(leadId)).status, "handoff", label);
     assert.equal(sent.length, 1, label);
     assert.match(sent[0].reason, /Calendar unavailable.*invalid_grant/, label);
   }
+});
+
+test("a numeric reply books exactly the time the lead was shown, even if availability changed since", async () => {
+  // Regression: confirmBooking re-fetched availability and took slots[n-1];
+  // once an hour passed or the agent's calendar changed, the list shifted
+  // and the lead was booked into a different time than the one they picked.
+  const calendar = require("../src/services/calendar");
+  const email = require("../src/services/email");
+  const { offerShowingSlots, confirmBooking } = require("../src/services/conversationEngine");
+
+  const info = await statements.insertLead.run({ source: "zillow", name: "Pick Test", email: "pick@example.com", notes: null });
+  const leadId = info.lastInsertRowid;
+  const slotAt = (iso) => ({ start: iso, end: new Date(new Date(iso).getTime() + 3600000).toISOString() });
+  const offered = [slotAt("2026-09-29T14:00:00.000Z"), slotAt("2026-09-29T15:00:00.000Z"), slotAt("2026-09-29T16:00:00.000Z")];
+
+  const originals = { avail: calendar.getAvailability, book: calendar.bookShowing, send: email.sendEmail };
+  const booked = [];
+  const emails = [];
+  email.sendEmail = async (args) => (emails.push(args), { messageId: null });
+  calendar.bookShowing = async ({ slot }) => (booked.push(slot), { id: "evt" });
+  try {
+    calendar.getAvailability = async () => offered;
+    await offerShowingSlots(leadId);
+    // Time passes: the 9am slot is gone, so a fresh lookup would shift by one.
+    calendar.getAvailability = async () => offered.slice(1);
+    await confirmBooking(leadId, 2);
+  } finally {
+    calendar.getAvailability = originals.avail;
+    calendar.bookShowing = originals.book;
+    email.sendEmail = originals.send;
+  }
+
+  assert.deepEqual(booked, [offered[1]]);
+  assert.equal((await statements.getLead.get(leadId)).status, "booked");
+  // Shown to the lead in the agent's timezone (10:00 AM Central), not the server's UTC.
+  assert.match(emails[0].text, /2\) .*10:00/);
+  assert.match(emails[1].text, /10:00/);
 });

@@ -1,4 +1,5 @@
 const express = require("express");
+const { inBackground } = require("../lib/background");
 const { statements } = require("../db");
 const { runTurn, confirmBooking } = require("../services/conversationEngine");
 const { isValidAgentMailSignature } = require("../middleware/webhookAuth");
@@ -22,27 +23,31 @@ router.post("/webhooks/email", async (req, res) => {
   if (!isValidAgentMailSignature(req)) {
     return res.status(401).json({ error: "bad signature" });
   }
-  res.status(200).json({ ok: true }); // ack immediately, work happens async
+  res.status(200).json({ ok: true }); // ack immediately, work happens in the background
+  inBackground(
+    handleInbound(req.body).catch((err) => console.error("[email] inbound processing failed:", err))
+  );
+});
 
-  const evt = req.body;
+async function handleInbound(evt) {
   if (evt.event_type !== "message.received") return;
 
   const msg = evt.message;
   const from = extractEmailAddress(msg.from);
   const body = (msg.text || "").trim();
 
-  const lead = statements.findLeadByEmail.get(from);
+  const lead = await statements.findLeadByEmail.get(from);
   if (!lead) {
     console.log(`[email] inbound from unknown sender ${from}: ${msg.subject}`);
     return;
   }
 
-  if (msg.message_id && statements.messageByMessageId.get(msg.message_id)) {
+  if (msg.message_id && (await statements.messageByMessageId.get(msg.message_id))) {
     console.log(`[email] duplicate delivery of ${msg.message_id}, skipping (already processed)`);
     return;
   }
 
-  statements.insertMessage.run({
+  await statements.insertMessage.run({
     lead_id: lead.id,
     direction: "inbound",
     channel: "email",
@@ -52,25 +57,22 @@ router.post("/webhooks/email", async (req, res) => {
   });
 
   if (msg.thread_id && msg.thread_id !== lead.thread_id) {
-    statements.updateLead.run({ ...lead, thread_id: msg.thread_id });
+    await statements.updateLead.run({ ...lead, thread_id: msg.thread_id });
   }
 
   // If we just offered numbered showing slots, treat a bare digit reply as a pick.
-  const lastOutbound = statements.historyForLead
-    .all(lead.id)
+  const lastOutbound = (await statements.historyForLead.all(lead.id))
     .filter((m) => m.direction === "outbound")
     .pop();
   const awaitingSlotPick = lastOutbound && /Reply with the number/i.test(lastOutbound.body);
 
   if (awaitingSlotPick && /^\s*\d+\s*$/.test(body)) {
-    confirmBooking(lead.id, parseInt(body, 10)).catch((err) =>
-      console.error(`[lead ${lead.id}] booking confirm failed:`, err)
-    );
+    await confirmBooking(lead.id, parseInt(body, 10));
     return;
   }
 
-  runTurn(lead.id).catch((err) => console.error(`[lead ${lead.id}] turn failed:`, err));
-});
+  await runTurn(lead.id);
+}
 
 module.exports = router;
 module.exports.extractEmailAddress = extractEmailAddress;

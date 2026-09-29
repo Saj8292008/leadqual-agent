@@ -1,6 +1,7 @@
 const fs = require("fs");
 const { google } = require("googleapis");
 const { getSetting } = require("../db/settings");
+const { agentTimeZone, zonedParts } = require("../lib/time");
 
 const CALENDAR_CONNECTION_KEY = "google_calendar";
 
@@ -16,8 +17,8 @@ function oauthClient() {
 //   1. The agent connected their own Google account via /connect/calendar
 //   2. A service account + AGENT_CALENDAR_ID in .env (developer setup)
 //   3. Neither — null, and callers fall back to stub slots / dry-run booking
-function getCalendarTarget() {
-  const connection = getSetting(CALENDAR_CONNECTION_KEY);
+async function getCalendarTarget() {
+  const connection = await getSetting(CALENDAR_CONNECTION_KEY);
   if (connection?.refresh_token) {
     const auth = oauthClient();
     auth.setCredentials({ refresh_token: connection.refresh_token });
@@ -40,7 +41,7 @@ function getCalendarTarget() {
 // Falls back to a stub list when no service account is configured, so the
 // conversation flow can be exercised end-to-end before calendar creds exist.
 async function getAvailability({ days = 5 } = {}) {
-  const target = getCalendarTarget();
+  const target = await getCalendarTarget();
   if (!target) {
     return stubSlots(days);
   }
@@ -58,13 +59,15 @@ async function getAvailability({ days = 5 } = {}) {
   });
 
   const busy = data.calendars[target.calendarId].busy || [];
-  return candidateSlots(timeMin, timeMax).filter(
-    (slot) => !busy.some((b) => overlaps(slot, b))
-  );
+  // Filter the full list before capping, so a busy morning doesn't leave
+  // the lead with fewer options than we could have offered.
+  return candidateSlots(timeMin, timeMax, Infinity)
+    .filter((slot) => !busy.some((b) => overlaps(slot, b)))
+    .slice(0, 6);
 }
 
 async function bookShowing({ lead, slot }) {
-  const target = getCalendarTarget();
+  const target = await getCalendarTarget();
   const summary = `Showing: ${lead.name || "New lead"} (${lead.email})`;
   const description = `Source: ${lead.source}\nBudget: ${lead.budget}\nTimeline: ${lead.timeline}\nMotivation: ${lead.motivation}`;
 
@@ -79,28 +82,28 @@ async function bookShowing({ lead, slot }) {
     requestBody: {
       summary,
       description,
-      start: { dateTime: slot.start, timeZone: process.env.AGENT_TIMEZONE },
-      end: { dateTime: slot.end, timeZone: process.env.AGENT_TIMEZONE },
+      start: { dateTime: slot.start, timeZone: agentTimeZone() },
+      end: { dateTime: slot.end, timeZone: agentTimeZone() },
     },
   });
   return event.data;
 }
 
-function candidateSlots(from, to) {
+const HOUR_MS = 60 * 60 * 1000;
+
+// Hour-long weekday slots between 9am and 5pm in the agent's timezone (the
+// server's own clock is UTC on Vercel), starting from the next full hour.
+function candidateSlots(from, to, limit = 6) {
   const slots = [];
-  const cursor = new Date(from);
-  cursor.setMinutes(0, 0, 0);
-  while (cursor < to) {
-    const day = cursor.getDay();
-    const hour = cursor.getHours();
-    if (day !== 0 && day !== 6 && hour >= 9 && hour < 17) {
-      const start = new Date(cursor);
-      const end = new Date(cursor.getTime() + 60 * 60 * 1000);
-      slots.push({ start: start.toISOString(), end: end.toISOString() });
+  let cursor = Math.ceil(new Date(from).getTime() / HOUR_MS) * HOUR_MS;
+  while (cursor < new Date(to).getTime() && slots.length < limit) {
+    const { weekday, hour } = zonedParts(new Date(cursor));
+    if (weekday !== "Sat" && weekday !== "Sun" && hour >= 9 && hour < 17) {
+      slots.push({ start: new Date(cursor).toISOString(), end: new Date(cursor + HOUR_MS).toISOString() });
     }
-    cursor.setHours(cursor.getHours() + 1);
+    cursor += HOUR_MS;
   }
-  return slots.slice(0, 6);
+  return slots;
 }
 
 function stubSlots(days) {

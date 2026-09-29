@@ -7,11 +7,11 @@ const alerts = require("./alerts");
 // the admin API. Either way, no vendor on file for the category always needs
 // a human — we're not guessing who to call for a plumbing job.
 async function dispatch(requestId) {
-  const request = propertyStatements.getMaintenanceRequest.get(requestId);
+  const request = await propertyStatements.getMaintenanceRequest.get(requestId);
   if (!request) throw new Error("maintenance request not found");
   if (request.status !== "triaged") throw new Error(`cannot dispatch a request with status ${request.status}`);
 
-  const vendors = propertyStatements.vendorsForCategory.all(request.category);
+  const vendors = await propertyStatements.vendorsForCategory.all(request.category);
   if (!vendors.length) {
     await alerts.notifyHandoff({
       lead: { name: `Maintenance request #${request.id}`, email: "", source: "property-management" },
@@ -26,7 +26,7 @@ async function dispatch(requestId) {
     subject: `Maintenance dispatch — ${request.category} (${request.urgency})`,
     text: request.vendor_message,
   });
-  propertyStatements.markDispatched.run({ id: request.id });
+  await propertyStatements.markDispatched.run({ id: request.id });
   return { dispatched: true, vendor };
 }
 

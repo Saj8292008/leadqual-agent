@@ -1,6 +1,6 @@
-const { db } = require("./index");
+const { schema, prepare } = require("./client");
 
-db.exec(`
+schema(`
   CREATE TABLE IF NOT EXISTS listings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     address TEXT NOT NULL,
@@ -26,15 +26,15 @@ db.exec(`
 `);
 
 const listingStatements = {
-  insertListing: db.prepare(`
+  insertListing: prepare(`
     INSERT INTO listings (address, city, state, zip, price, beds, baths, sqft, features, photo_urls)
     VALUES (@address, @city, @state, @zip, @price, @beds, @baths, @sqft, @features, @photo_urls)
   `),
-  getListing: db.prepare(`SELECT * FROM listings WHERE id = ?`),
-  listListings: db.prepare(`SELECT * FROM listings ORDER BY updated_at DESC`),
+  getListing: prepare(`SELECT * FROM listings WHERE id = ?`),
+  listListings: prepare(`SELECT * FROM listings ORDER BY updated_at DESC`),
   // Public-facing: only published listings, safe fields only (no internal
   // status/fact-check/social-copy fields), optionally filtered by location.
-  publicListings: db.prepare(`
+  publicListings: prepare(`
     SELECT id, address, city, state, zip, price, beds, baths, sqft, description, photo_urls, updated_at
     FROM listings
     WHERE status = 'published'
@@ -43,16 +43,16 @@ const listingStatements = {
       AND (@zip IS NULL OR zip = @zip)
     ORDER BY updated_at DESC
   `),
-  publicListing: db.prepare(`
+  publicListing: prepare(`
     SELECT id, address, city, state, zip, price, beds, baths, sqft, description, photo_urls, updated_at
     FROM listings WHERE id = ? AND status = 'published'
   `),
-  distinctCities: db.prepare(`
+  distinctCities: prepare(`
     SELECT DISTINCT city, state, COUNT(*) as count FROM listings
     WHERE status = 'published' AND city IS NOT NULL
     GROUP BY city, state ORDER BY city ASC
   `),
-  saveGeneratedContent: db.prepare(`
+  saveGeneratedContent: prepare(`
     UPDATE listings SET
       status = @status,
       description = @description,
@@ -64,13 +64,13 @@ const listingStatements = {
       updated_at = datetime('now')
     WHERE id = @id
   `),
-  clearReview: db.prepare(`
+  clearReview: prepare(`
     UPDATE listings SET status = 'generated', updated_at = datetime('now') WHERE id = @id
   `),
-  markGenerationFailed: db.prepare(`
+  markGenerationFailed: prepare(`
     UPDATE listings SET status = 'generation_failed', updated_at = datetime('now') WHERE id = @id
   `),
-  markPublished: db.prepare(`
+  markPublished: prepare(`
     UPDATE listings SET status = 'published', updated_at = datetime('now') WHERE id = @id
   `),
 };

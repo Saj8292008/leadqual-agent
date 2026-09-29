@@ -1,6 +1,6 @@
-const { db } = require("./index");
+const { schema, prepare } = require("./client");
 
-db.exec(`
+schema(`
   CREATE TABLE IF NOT EXISTS properties (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     address TEXT NOT NULL,
@@ -67,65 +67,65 @@ db.exec(`
 `);
 
 const propertyStatements = {
-  insertProperty: db.prepare(`
+  insertProperty: prepare(`
     INSERT INTO properties (address, landlord_name, landlord_email)
     VALUES (@address, @landlord_name, @landlord_email)
   `),
-  getProperty: db.prepare(`SELECT * FROM properties WHERE id = ?`),
-  listProperties: db.prepare(`SELECT * FROM properties ORDER BY created_at DESC`),
+  getProperty: prepare(`SELECT * FROM properties WHERE id = ?`),
+  listProperties: prepare(`SELECT * FROM properties ORDER BY created_at DESC`),
 
-  insertTenant: db.prepare(`
+  insertTenant: prepare(`
     INSERT INTO tenants (property_id, unit, name, email, phone, lease_start, lease_end, rent_amount, rent_due_day)
     VALUES (@property_id, @unit, @name, @email, @phone, @lease_start, @lease_end, @rent_amount, @rent_due_day)
   `),
-  getTenant: db.prepare(`SELECT * FROM tenants WHERE id = ?`),
-  listTenants: db.prepare(`SELECT * FROM tenants ORDER BY created_at DESC`),
-  activeTenants: db.prepare(`SELECT * FROM tenants WHERE status = 'active'`),
-  activeTenantsWithProperty: db.prepare(`
+  getTenant: prepare(`SELECT * FROM tenants WHERE id = ?`),
+  listTenants: prepare(`SELECT * FROM tenants ORDER BY created_at DESC`),
+  activeTenants: prepare(`SELECT * FROM tenants WHERE status = 'active'`),
+  activeTenantsWithProperty: prepare(`
     SELECT t.*, p.address, p.landlord_email, p.landlord_name FROM tenants t
     JOIN properties p ON p.id = t.property_id
     WHERE t.status = 'active'
   `),
-  markLeaseReminderSent: db.prepare(`
+  markLeaseReminderSent: prepare(`
     UPDATE tenants SET last_lease_reminder_days = @days WHERE id = @id
   `),
 
-  recordRentPayment: db.prepare(`
+  recordRentPayment: prepare(`
     INSERT OR IGNORE INTO rent_payments (tenant_id, period) VALUES (@tenant_id, @period)
   `),
-  hasPaid: db.prepare(`SELECT 1 FROM rent_payments WHERE tenant_id = ? AND period = ?`),
-  markRentReminderSent: db.prepare(`
+  hasPaid: prepare(`SELECT 1 FROM rent_payments WHERE tenant_id = ? AND period = ?`),
+  markRentReminderSent: prepare(`
     INSERT OR IGNORE INTO rent_reminders_sent (tenant_id, period, kind) VALUES (@tenant_id, @period, @kind)
   `),
-  rentReminderAlreadySent: db.prepare(`
+  rentReminderAlreadySent: prepare(`
     SELECT 1 FROM rent_reminders_sent WHERE tenant_id = ? AND period = ? AND kind = ?
   `),
 
-  insertMaintenanceRequest: db.prepare(`
+  insertMaintenanceRequest: prepare(`
     INSERT INTO maintenance_requests (tenant_id, property_id, description)
     VALUES (@tenant_id, @property_id, @description)
   `),
-  getMaintenanceRequest: db.prepare(`SELECT * FROM maintenance_requests WHERE id = ?`),
-  listMaintenanceRequests: db.prepare(`SELECT * FROM maintenance_requests ORDER BY created_at DESC`),
-  saveTriage: db.prepare(`
+  getMaintenanceRequest: prepare(`SELECT * FROM maintenance_requests WHERE id = ?`),
+  listMaintenanceRequests: prepare(`SELECT * FROM maintenance_requests ORDER BY created_at DESC`),
+  saveTriage: prepare(`
     UPDATE maintenance_requests SET
       status = 'triaged', category = @category, urgency = @urgency,
       vendor_message = @vendor_message, updated_at = datetime('now')
     WHERE id = @id
   `),
-  markTriageFailed: db.prepare(`
+  markTriageFailed: prepare(`
     UPDATE maintenance_requests SET status = 'triage_failed', updated_at = datetime('now') WHERE id = @id
   `),
-  markDispatched: db.prepare(`
+  markDispatched: prepare(`
     UPDATE maintenance_requests SET status = 'dispatched', updated_at = datetime('now') WHERE id = @id
   `),
-  markResolved: db.prepare(`
+  markResolved: prepare(`
     UPDATE maintenance_requests SET status = 'resolved', updated_at = datetime('now') WHERE id = @id
   `),
 
-  insertVendor: db.prepare(`INSERT INTO vendors (category, name, email) VALUES (@category, @name, @email)`),
-  vendorsForCategory: db.prepare(`SELECT * FROM vendors WHERE category = ?`),
-  listVendors: db.prepare(`SELECT * FROM vendors ORDER BY category ASC`),
+  insertVendor: prepare(`INSERT INTO vendors (category, name, email) VALUES (@category, @name, @email)`),
+  vendorsForCategory: prepare(`SELECT * FROM vendors WHERE category = ?`),
+  listVendors: prepare(`SELECT * FROM vendors ORDER BY category ASC`),
 };
 
 module.exports = { propertyStatements };

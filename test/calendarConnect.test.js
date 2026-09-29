@@ -73,7 +73,7 @@ test("a callback with a forged state is rejected and connects nothing", async ()
   } finally {
     restore();
   }
-  assert.equal(getSetting(calendar.CALENDAR_CONNECTION_KEY), null);
+  assert.equal(await getSetting(calendar.CALENDAR_CONNECTION_KEY), null);
 });
 
 test("a valid callback stores the connection and calendar calls switch to the agent's own calendar", async () => {
@@ -94,7 +94,7 @@ test("a valid callback stores the connection and calendar calls switch to the ag
   assert.equal(status.connected, true);
   assert.equal(status.email, "agent@gmail.com");
 
-  const target = calendar.getCalendarTarget();
+  const target = await calendar.getCalendarTarget();
   assert.equal(target.calendarId, "primary");
   assert.equal(target.auth.credentials.refresh_token, "refresh-123");
 });
@@ -112,6 +112,6 @@ test("disconnecting removes the connection", async () => {
   } finally {
     calendar.oauthClient = original;
   }
-  assert.equal(getSetting(calendar.CALENDAR_CONNECTION_KEY), null);
-  assert.equal(calendar.getCalendarTarget(), null);
+  assert.equal(await getSetting(calendar.CALENDAR_CONNECTION_KEY), null);
+  assert.equal(await calendar.getCalendarTarget(), null);
 });

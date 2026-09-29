@@ -1,4 +1,5 @@
 const express = require("express");
+const { inBackground } = require("../lib/background");
 const { isValidWebhookSecret } = require("../middleware/webhookAuth");
 const { statements } = require("../db");
 const { runTurn } = require("../services/conversationEngine");
@@ -17,12 +18,12 @@ router.post("/webhooks/lead", async (req, res) => {
   const { source, name, email, notes } = req.body;
   if (!email) return res.status(400).json({ error: "email is required" });
 
-  const existing = statements.findLeadByEmail.get(email);
+  const existing = await statements.findLeadByEmail.get(email);
   if (existing) {
     return res.status(200).json({ id: existing.id, status: "already exists" });
   }
 
-  const info = statements.insertLead.run({
+  const info = await statements.insertLead.run({
     source: source || "unknown",
     name: name || null,
     email,
@@ -32,8 +33,10 @@ router.post("/webhooks/lead", async (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid });
 
   // First outbound touch — fire and forget so the webhook responds fast.
-  runTurn(info.lastInsertRowid).catch((err) =>
-    console.error(`[lead ${info.lastInsertRowid}] first-touch failed:`, err)
+  inBackground(
+    runTurn(info.lastInsertRowid).catch((err) =>
+      console.error(`[lead ${info.lastInsertRowid}] first-touch failed:`, err)
+    )
   );
 });
 

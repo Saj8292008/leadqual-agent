@@ -1,6 +1,6 @@
-const { db } = require("./index");
+const { schema, prepare, transaction } = require("./client");
 
-db.exec(`
+schema(`
   CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     address TEXT NOT NULL,
@@ -40,70 +40,69 @@ const MILESTONE_FIELDS = [
 ];
 
 const transactionStatements = {
-  insertTransaction: db.prepare(`
-    INSERT INTO transactions (
-      address, buyer_name, buyer_email, seller_name, seller_email,
-      contract_date, inspection_deadline, financing_deadline, appraisal_deadline, closing_date, notes
-    ) VALUES (
-      @address, @buyer_name, @buyer_email, @seller_name, @seller_email,
-      @contract_date, @inspection_deadline, @financing_deadline, @appraisal_deadline, @closing_date, @notes
-    )
-  `),
-  insertMilestone: db.prepare(`
-    INSERT INTO transaction_milestones (transaction_id, name, due_date)
-    VALUES (@transaction_id, @name, @due_date)
-  `),
-  getTransaction: db.prepare(`SELECT * FROM transactions WHERE id = ?`),
-  listTransactions: db.prepare(`SELECT * FROM transactions ORDER BY updated_at DESC`),
-  milestonesForTransaction: db.prepare(`
+  getTransaction: prepare(`SELECT * FROM transactions WHERE id = ?`),
+  listTransactions: prepare(`SELECT * FROM transactions ORDER BY updated_at DESC`),
+  milestonesForTransaction: prepare(`
     SELECT * FROM transaction_milestones WHERE transaction_id = ? ORDER BY due_date ASC
   `),
-  markMilestoneComplete: db.prepare(`
+  markMilestoneComplete: prepare(`
     UPDATE transaction_milestones SET completed_at = datetime('now') WHERE id = ?
   `),
-  markStatus: db.prepare(`
+  markStatus: prepare(`
     UPDATE transactions SET status = @status, updated_at = datetime('now') WHERE id = @id
   `),
-  // Pending (not completed) milestones due within the given days, that haven't been reminded yet today.
-  // due_date is a local calendar date, so compare against the local date — plain date('now') is UTC,
-  // which would flag a deadline as overdue while it's still "due today" locally (daysUntil() is local too).
-  milestonesNeedingReminder: db.prepare(`
+  // Pending (not completed) milestones due within the given days that haven't been reminded yet today.
+  // due_date is the agent's local calendar date, so @today is passed in as the agent's local date
+  // (see lib/time.js) — the database's own date('now') is UTC, and 'localtime' on a hosted DB is UTC too,
+  // which would flag a deadline as overdue in the evening while it's still "due today" locally.
+  // last_reminder_sent_at stores that same local date.
+  milestonesNeedingReminder: prepare(`
     SELECT m.*, t.address, t.buyer_email, t.seller_email FROM transaction_milestones m
     JOIN transactions t ON t.id = m.transaction_id
     WHERE m.completed_at IS NULL
       AND t.status = 'active'
-      AND date(m.due_date) <= date('now', 'localtime', '+' || ? || ' days')
-      AND (m.last_reminder_sent_at IS NULL OR date(m.last_reminder_sent_at, 'localtime') < date('now', 'localtime'))
+      AND date(m.due_date) <= date(@today, '+' || @days || ' days')
+      AND (m.last_reminder_sent_at IS NULL OR date(m.last_reminder_sent_at) < @today)
   `),
-  milestonesOverdue: db.prepare(`
+  milestonesOverdue: prepare(`
     SELECT m.*, t.address FROM transaction_milestones m
     JOIN transactions t ON t.id = m.transaction_id
     WHERE m.completed_at IS NULL
       AND t.status = 'active'
-      AND date(m.due_date) < date('now', 'localtime')
+      AND date(m.due_date) < @today
       AND m.missed_alert_sent_at IS NULL
   `),
-  markReminderSent: db.prepare(`
-    UPDATE transaction_milestones SET last_reminder_sent_at = datetime('now') WHERE id = ?
+  markReminderSent: prepare(`
+    UPDATE transaction_milestones SET last_reminder_sent_at = @today WHERE id = @id
   `),
-  markMissedAlertSent: db.prepare(`
+  markMissedAlertSent: prepare(`
     UPDATE transaction_milestones SET missed_alert_sent_at = datetime('now') WHERE id = ?
   `),
 };
 
-function createTransactionWithMilestones(fields) {
-  const info = transactionStatements.insertTransaction.run(fields);
-  const transactionId = info.lastInsertRowid;
-  for (const { name, column } of MILESTONE_FIELDS) {
-    if (fields[column]) {
-      transactionStatements.insertMilestone.run({
-        transaction_id: transactionId,
-        name,
-        due_date: fields[column],
-      });
+const INSERT_TRANSACTION_SQL = `
+  INSERT INTO transactions (
+    address, buyer_name, buyer_email, seller_name, seller_email,
+    contract_date, inspection_deadline, financing_deadline, appraisal_deadline, closing_date, notes
+  ) VALUES (
+    @address, @buyer_name, @buyer_email, @seller_name, @seller_email,
+    @contract_date, @inspection_deadline, @financing_deadline, @appraisal_deadline, @closing_date, @notes
+  )`;
+const INSERT_MILESTONE_SQL = `
+  INSERT INTO transaction_milestones (transaction_id, name, due_date)
+  VALUES (@transaction_id, @name, @due_date)`;
+
+// All-or-nothing, so a transaction never exists without its deadlines.
+async function createTransactionWithMilestones(fields) {
+  return transaction(async (tx) => {
+    const { lastInsertRowid: transactionId } = await tx.run(INSERT_TRANSACTION_SQL, fields);
+    for (const { name, column } of MILESTONE_FIELDS) {
+      if (fields[column]) {
+        await tx.run(INSERT_MILESTONE_SQL, { transaction_id: transactionId, name, due_date: fields[column] });
+      }
     }
-  }
-  return transactionId;
+    return transactionId;
+  });
 }
 
 module.exports = { transactionStatements, createTransactionWithMilestones, MILESTONE_FIELDS };
