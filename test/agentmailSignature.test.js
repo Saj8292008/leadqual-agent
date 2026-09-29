@@ -25,33 +25,33 @@ const body = JSON.stringify({
   message: { from: "jordan@example.com", text: "2", message_id: "m1" },
 });
 
-test("accepts a genuinely signed AgentMail delivery", () => {
+test("accepts a genuinely signed AgentMail delivery", async () => {
   process.env.AGENTMAIL_WEBHOOK_SECRET = SECRET;
-  assert.equal(isValidAgentMailSignature(signedReq(body)), true);
+  assert.equal(await isValidAgentMailSignature(signedReq(body)), true);
 });
 
-test("rejects a forged reply with no signature (anyone could book a showing as the lead)", () => {
+test("rejects a forged reply with no signature (anyone could book a showing as the lead)", async () => {
   process.env.AGENTMAIL_WEBHOOK_SECRET = SECRET;
-  assert.equal(isValidAgentMailSignature({ rawBody: Buffer.from(body), headers: {} }), false);
+  assert.equal(await isValidAgentMailSignature({ rawBody: Buffer.from(body), headers: {} }), false);
 });
 
-test("rejects a body altered after signing", () => {
+test("rejects a body altered after signing", async () => {
   process.env.AGENTMAIL_WEBHOOK_SECRET = SECRET;
-  assert.equal(isValidAgentMailSignature(signedReq(body, { tamper: body.replace('"2"', '"3"') })), false);
+  assert.equal(await isValidAgentMailSignature(signedReq(body, { tamper: body.replace('"2"', '"3"') })), false);
 });
 
-test("rejects a signature made with a different secret", () => {
+test("rejects a signature made with a different secret", async () => {
   process.env.AGENTMAIL_WEBHOOK_SECRET = SECRET;
-  assert.equal(isValidAgentMailSignature(signedReq(body, { secret: OTHER_SECRET })), false);
+  assert.equal(await isValidAgentMailSignature(signedReq(body, { secret: OTHER_SECRET })), false);
 });
 
-test("rejects a replayed delivery older than the tolerance window", () => {
+test("rejects a replayed delivery older than the tolerance window", async () => {
   process.env.AGENTMAIL_WEBHOOK_SECRET = SECRET;
   const anHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  assert.equal(isValidAgentMailSignature(signedReq(body, { sentAt: anHourAgo })), false);
+  assert.equal(await isValidAgentMailSignature(signedReq(body, { sentAt: anHourAgo })), false);
 });
 
-test("rejects everything when AGENTMAIL_WEBHOOK_SECRET is not configured", () => {
+test("rejects everything when AGENTMAIL_WEBHOOK_SECRET is not configured", async () => {
   delete process.env.AGENTMAIL_WEBHOOK_SECRET;
-  assert.equal(isValidAgentMailSignature(signedReq(body)), false);
+  assert.equal(await isValidAgentMailSignature(signedReq(body)), false);
 });

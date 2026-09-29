@@ -1,0 +1,5 @@
+.env*
+data.sqlite*
+*.log
+google-service-account.json
+node_modules

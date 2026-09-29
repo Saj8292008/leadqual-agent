@@ -20,7 +20,7 @@ function extractEmailAddress(from) {
 //   { "url": "<this>/webhooks/email", "event_types": ["message.received"], "inbox_ids": [AGENTMAIL_INBOX_ID] }
 // and put the returned whsec_ secret in AGENTMAIL_WEBHOOK_SECRET.
 router.post("/webhooks/email", async (req, res) => {
-  if (!isValidAgentMailSignature(req)) {
+  if (!(await isValidAgentMailSignature(req))) {
     return res.status(401).json({ error: "bad signature" });
   }
   res.status(200).json({ ok: true }); // ack immediately, work happens in the background
