@@ -9,7 +9,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "leadqual-test-"));
 
 const { statements } = require("../src/db");
 const claude = require("../src/services/claude");
-const slack = require("../src/services/slack");
+const alerts = require("../src/services/alerts");
 const { runTurn } = require("../src/services/conversationEngine");
 
 test("a failed model call hands the lead to a human instead of silently dropping them", async () => {
@@ -24,24 +24,24 @@ test("a failed model call hands the lead to a human instead of silently dropping
   const leadId = info.lastInsertRowid;
 
   const originalConverse = claude.converse;
-  const originalNotify = slack.notifyHandoff;
-  const alerts = [];
+  const originalNotify = alerts.notifyHandoff;
+  const sent = [];
   claude.converse = async () => {
     throw new Error("z-ai/glm-5.3 request timed out after 45000ms");
   };
-  slack.notifyHandoff = async (args) => alerts.push(args);
+  alerts.notifyHandoff = async (args) => sent.push(args);
 
   try {
     await assert.rejects(runTurn(leadId), /timed out/);
   } finally {
     claude.converse = originalConverse;
-    slack.notifyHandoff = originalNotify;
+    alerts.notifyHandoff = originalNotify;
   }
 
   const lead = statements.getLead.get(leadId);
   assert.equal(lead.status, "handoff");
   assert.equal(lead.next_followup_at, null);
-  assert.equal(alerts.length, 1);
-  assert.equal(alerts[0].lead.id, leadId);
-  assert.match(alerts[0].reason, /couldn't generate a reply.*timed out/);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].lead.id, leadId);
+  assert.match(sent[0].reason, /couldn't generate a reply.*timed out/);
 });

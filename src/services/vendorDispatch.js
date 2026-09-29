@@ -1,6 +1,6 @@
 const { propertyStatements } = require("../db/propertyManagement");
 const email = require("./email");
-const slack = require("./slack");
+const alerts = require("./alerts");
 
 // Emergencies dispatch immediately since waiting for a human to review costs
 // real time/damage; everything else waits for a human to hit dispatch via
@@ -13,7 +13,7 @@ async function dispatch(requestId) {
 
   const vendors = propertyStatements.vendorsForCategory.all(request.category);
   if (!vendors.length) {
-    await slack.notifyHandoff({
+    await alerts.notifyHandoff({
       lead: { name: `Maintenance request #${request.id}`, email: "", source: "property-management" },
       reason: `No vendor on file for category "${request.category}" — needs a human to find and contact one directly. Urgency: ${request.urgency}.`,
     });

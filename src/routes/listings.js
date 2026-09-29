@@ -5,7 +5,7 @@ const listingContent = require("../services/listingContent");
 const { renderFlyerHtml } = require("../services/flyer");
 const { checkContent } = require("../services/factCheck");
 const { requireAdminAuth } = require("../middleware/adminAuth");
-const slack = require("../services/slack");
+const alerts = require("../services/alerts");
 
 const router = express.Router();
 
@@ -58,7 +58,7 @@ async function handleGenerationFailure(listingId, err) {
   console.error(`[listing ${listingId}] content generation failed:`, err);
   listingStatements.markGenerationFailed.run({ id: listingId });
   const listing = listingStatements.getListing.get(listingId);
-  await slack.notifyHandoff({
+  await alerts.notifyHandoff({
     lead: { name: listing.address, email: "", source: "listing-marketing" },
     reason: `Content generation failed for this listing: ${err.message}. Needs a manual regenerate (or more complete facts).`,
   });

@@ -1,6 +1,6 @@
 const { transactionStatements } = require("../db/transactions");
 const email = require("./email");
-const slack = require("./slack");
+const alerts = require("./alerts");
 
 const REMINDER_WINDOW_DAYS = process.env.MILESTONE_REMINDER_DAYS || 3;
 
@@ -49,7 +49,7 @@ async function alertOverdue() {
   const overdue = transactionStatements.milestonesOverdue.all();
   for (const milestone of overdue) {
     const label = MILESTONE_LABELS[milestone.name] || milestone.name;
-    await slack.notifyHandoff({
+    await alerts.notifyHandoff({
       lead: { name: milestone.address, email: "", source: "transaction-coordination" },
       reason: `${label} deadline missed (was due ${milestone.due_date}) — needs a human to chase this down.`,
     });

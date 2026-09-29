@@ -4,7 +4,7 @@ const { propertyStatements } = require("../db/propertyManagement");
 const { triage } = require("../services/maintenanceTriage");
 const { dispatch } = require("../services/vendorDispatch");
 const { requireAdminAuth } = require("../middleware/adminAuth");
-const slack = require("../services/slack");
+const alerts = require("../services/alerts");
 
 const router = express.Router();
 
@@ -121,7 +121,7 @@ async function triageAndMaybeDispatch(requestId) {
 async function handleTriageFailure(requestId, err) {
   console.error(`[maintenance ${requestId}] triage failed:`, err);
   propertyStatements.markTriageFailed.run({ id: requestId });
-  await slack.notifyHandoff({
+  await alerts.notifyHandoff({
     lead: { name: `Maintenance request #${requestId}`, email: "", source: "property-management" },
     reason: `Triage failed: ${err.message}. Needs a human to classify and dispatch manually.`,
   });

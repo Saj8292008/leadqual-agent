@@ -2,7 +2,7 @@ const { statements } = require("../db");
 const claude = require("./claude");
 const email = require("./email");
 const calendar = require("./calendar");
-const slack = require("./slack");
+const alerts = require("./alerts");
 
 function subjectFor(lead) {
   return `Re: your home search${lead.name ? " — " + lead.name : ""}`;
@@ -40,12 +40,12 @@ async function runTurn(leadId) {
     // nothing ever retrying it — observed end-to-end with a lead who was
     // pre-approved and asking for a showing. Hand them to a human instead.
     statements.updateLead.run({ ...lead, status: "handoff", next_followup_at: null });
-    slack
+    alerts
       .notifyHandoff({
         lead: statements.getLead.get(lead.id),
         reason: `AI couldn't generate a reply (${err.message}) — please respond manually`,
       })
-      .catch((slackErr) => console.error(`[handoff] slack alert failed for lead ${lead.id}:`, slackErr));
+      .catch((alertErr) => console.error(`[handoff] alert failed for lead ${lead.id}:`, alertErr));
     throw err;
   }
 
@@ -84,8 +84,8 @@ async function runTurn(leadId) {
 
   if (decision.handoff) {
     const freshLead = statements.getLead.get(lead.id);
-    slack.notifyHandoff({ lead: freshLead, reason: decision.notes }).catch((err) =>
-      console.error(`[handoff] slack alert failed for lead ${lead.id}:`, err)
+    alerts.notifyHandoff({ lead: freshLead, reason: decision.notes }).catch((err) =>
+      console.error(`[handoff] alert failed for lead ${lead.id}:`, err)
     );
   }
 

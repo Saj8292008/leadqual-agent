@@ -1,7 +1,7 @@
 const { propertyStatements } = require("../db/propertyManagement");
 const { daysUntil } = require("./transactionReminders");
 const email = require("./email");
-const slack = require("./slack");
+const alerts = require("./alerts");
 
 const RENT_REMINDER_DAYS = Number(process.env.RENT_REMINDER_DAYS || 3);
 const RENT_OVERDUE_GRACE_DAYS = Number(process.env.RENT_OVERDUE_GRACE_DAYS || 3);
@@ -74,7 +74,7 @@ async function sendRentOverdueAlerts() {
     const daysLate = -daysUntil(dueDate);
     if (daysLate < RENT_OVERDUE_GRACE_DAYS) continue;
 
-    await slack.notifyHandoff({
+    await alerts.notifyHandoff({
       lead: { name: `${tenant.name} — ${tenant.address}`, email: tenant.email, source: "property-management" },
       reason: `Rent for ${period} is ${daysLate} day(s) overdue and unpaid (due ${dueDate}).`,
     });
@@ -97,7 +97,7 @@ async function sendLeaseRenewalReminders() {
     const applicableMilestone = applicableLeaseMilestone(daysLeft, tenant.last_lease_reminder_days);
     if (applicableMilestone == null) continue;
 
-    await slack.notifyHandoff({
+    await alerts.notifyHandoff({
       lead: { name: `${tenant.name} — ${tenant.address}`, email: tenant.email, source: "property-management" },
       reason: `Lease ends ${tenant.lease_end} (in ${daysLeft} days) — time to start the renewal conversation.`,
     });
