@@ -29,6 +29,16 @@ function replyText(msg) {
   return extracted || (msg.text || "").trim();
 }
 
+// The slot number a reply picks, or null. Real replies aren't a bare digit
+// (observed live: "1 works for me."), so accept any reply naming exactly one
+// of the offered numbers — but not "2 or 3" (ambiguous) or "10am" (a time,
+// not an option), which go to the AI / a human instead.
+function slotPick(text, optionCount) {
+  const numbers = new Set((text.match(/(?<![\d:$])\b\d+\b(?!\s*(?:am|pm|:\d|k\b|%))/gi) || []).map(Number));
+  const options = [...numbers].filter((n) => n >= 1 && n <= optionCount);
+  return options.length === 1 && numbers.size === 1 ? options[0] : null;
+}
+
 router.post("/webhooks/email", async (req, res) => {
   if (!(await isValidAgentMailSignature(req))) {
     return res.status(401).json({ error: "bad signature" });
@@ -70,14 +80,17 @@ async function handleInbound(evt) {
     await statements.updateLead.run({ ...lead, thread_id: msg.thread_id });
   }
 
-  // If we just offered numbered showing slots, treat a bare digit reply as a pick.
+  // If we just offered numbered showing slots, a reply naming one of them is a pick.
+  const fresh = await statements.getLead.get(lead.id);
+  const offered = fresh.offered_slots ? JSON.parse(fresh.offered_slots) : [];
   const lastOutbound = (await statements.historyForLead.all(lead.id))
     .filter((m) => m.direction === "outbound")
     .pop();
-  const awaitingSlotPick = lastOutbound && /Reply with the number/i.test(lastOutbound.body);
+  const awaitingSlotPick = offered.length && lastOutbound && /Reply with the number/i.test(lastOutbound.body);
+  const pick = awaitingSlotPick ? slotPick(body, offered.length) : null;
 
-  if (awaitingSlotPick && /^\s*\d+\s*$/.test(body)) {
-    await confirmBooking(lead.id, parseInt(body, 10));
+  if (pick) {
+    await confirmBooking(lead.id, pick);
     return;
   }
 
@@ -87,3 +100,4 @@ async function handleInbound(evt) {
 module.exports = router;
 module.exports.extractEmailAddress = extractEmailAddress;
 module.exports.replyText = replyText;
+module.exports.slotPick = slotPick;

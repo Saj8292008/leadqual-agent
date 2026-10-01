@@ -41,3 +41,23 @@ test("falls back to the raw text when no extracted text is provided", () => {
   assert.equal(replyText({ text: "  Around $450k  " }), "Around $450k");
   assert.equal(replyText({ text: "hi", extracted_text: "   " }), "hi");
 });
+
+const { slotPick } = require("../src/routes/email");
+
+test("a natural reply naming one offered option counts as a pick", () => {
+  // Regression: observed live — "1 works for me." wasn't treated as a pick
+  // (only a bare digit was), so the AI answered and nothing got booked.
+  assert.equal(slotPick("1 works for me.", 3), 1);
+  assert.equal(slotPick("2", 3), 2);
+  assert.equal(slotPick("Option 3 please!", 3), 3);
+  assert.equal(slotPick("#2 is great, thanks", 3), 2);
+});
+
+test("ambiguous or non-option numbers are not treated as a pick", () => {
+  assert.equal(slotPick("2 or 3 both work", 3), null, "two options named");
+  assert.equal(slotPick("can we do 10am instead?", 3), null, "a time, not an option");
+  assert.equal(slotPick("anything at 4:30?", 3), null);
+  assert.equal(slotPick("5", 3), null, "out of range");
+  assert.equal(slotPick("my budget is 450k", 3), null);
+  assert.equal(slotPick("none of those work", 3), null);
+});

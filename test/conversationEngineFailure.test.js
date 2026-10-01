@@ -118,3 +118,21 @@ test("a numeric reply books exactly the time the lead was shown, even if availab
   assert.match(emails[0].text, /2\) .*10:00/);
   assert.match(emails[1].text, /10:00/);
 });
+
+test("the AI can't mark a lead booked — only an actual calendar booking does", async () => {
+  // Regression: observed live — the model replied "I've booked you for
+  // Thursday" and set status=booked, with nothing on the calendar.
+  const email = require("../src/services/email");
+  const info = await statements.insertLead.run({ source: "zillow", name: "No Fake Booking", email: "nofake@example.com", notes: null });
+  const leadId = info.lastInsertRowid;
+  const originals = { converse: claude.converse, send: email.sendEmail };
+  claude.converse = async () => ({ reply: "Thanks!", status: "booked" });
+  email.sendEmail = async () => ({ messageId: null });
+  try {
+    await runTurn(leadId);
+  } finally {
+    claude.converse = originals.converse;
+    email.sendEmail = originals.send;
+  }
+  assert.equal((await statements.getLead.get(leadId)).status, "qualifying");
+});

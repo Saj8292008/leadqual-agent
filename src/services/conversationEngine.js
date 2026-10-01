@@ -53,9 +53,14 @@ async function runTurn(leadId) {
     throw err;
   }
 
+  // Only confirmBooking marks a lead booked — that's when a calendar event
+  // actually exists. Observed live: the model replied "I've booked you" and
+  // set booked with nothing on the calendar.
+  const status = decision.status === "booked" ? "qualifying" : decision.status;
+
   const updated = {
     id: lead.id,
-    status: decision.status,
+    status,
     budget: decision.budget ?? lead.budget,
     timeline: decision.timeline ?? lead.timeline,
     motivation: decision.motivation ?? lead.motivation,
@@ -82,7 +87,8 @@ async function runTurn(leadId) {
     });
   }
 
-  if (decision.ready_to_book) {
+  // Don't resend the same options if they're already waiting on a pick.
+  if (decision.ready_to_book && !lead.offered_slots) {
     await offerShowingSlots(lead.id);
   }
 
