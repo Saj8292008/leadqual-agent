@@ -19,6 +19,16 @@ function extractEmailAddress(from) {
 //   POST https://api.agentmail.to/v0/webhooks
 //   { "url": "<this>/webhooks/email", "event_types": ["message.received"], "inbox_ids": [AGENTMAIL_INBOX_ID] }
 // and put the returned whsec_ secret in AGENTMAIL_WEBHOOK_SECRET.
+// Just what the lead wrote this time. Mail clients quote the whole earlier
+// thread under a reply ("On Wed ... wrote: > ..."), so the raw text of a
+// bare "2" picking a showing slot is "2" plus the quoted offer email —
+// which never matches as a slot pick. AgentMail's extracted_text strips
+// the quoted history; fall back to the raw text if it's absent.
+function replyText(msg) {
+  const extracted = (msg.extracted_text || "").trim();
+  return extracted || (msg.text || "").trim();
+}
+
 router.post("/webhooks/email", async (req, res) => {
   if (!(await isValidAgentMailSignature(req))) {
     return res.status(401).json({ error: "bad signature" });
@@ -34,7 +44,7 @@ async function handleInbound(evt) {
 
   const msg = evt.message;
   const from = extractEmailAddress(msg.from);
-  const body = (msg.text || "").trim();
+  const body = replyText(msg);
 
   const lead = await statements.findLeadByEmail.get(from);
   if (!lead) {
@@ -76,3 +86,4 @@ async function handleInbound(evt) {
 
 module.exports = router;
 module.exports.extractEmailAddress = extractEmailAddress;
+module.exports.replyText = replyText;

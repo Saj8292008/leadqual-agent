@@ -28,8 +28,20 @@ function addColumnIfMissing(table, column, type) {
   });
 }
 
-function toArgs(params) {
-  if (params.length === 1 && params[0] !== null && typeof params[0] === "object") return params[0];
+// Named parameters (@name / :name / $name) a statement actually uses.
+function namedParams(sql) {
+  return [...new Set([...sql.matchAll(/[@:$]([A-Za-z_]\w*)/g)].map((m) => m[1]))];
+}
+
+// Callers pass whole records (e.g. { ...lead, status }) the way better-sqlite3
+// allowed. A local SQLite file ignores unused keys, but Turso rejects them
+// ("Number of arguments mismatch") — so only the statement's own named
+// parameters are sent.
+function toArgs(sql, params) {
+  if (params.length === 1 && params[0] !== null && typeof params[0] === "object" && !Array.isArray(params[0])) {
+    const record = params[0];
+    return Object.fromEntries(namedParams(sql).map((name) => [name, record[name] ?? null]));
+  }
   return params;
 }
 
@@ -42,7 +54,7 @@ function plainRow(result, row) {
 function prepare(sql) {
   const execute = async (params) => {
     await ready;
-    return client.execute({ sql, args: toArgs(params) });
+    return client.execute({ sql, args: toArgs(sql, params) });
   };
   return {
     async get(...params) {
@@ -70,7 +82,7 @@ async function transaction(fn) {
   try {
     const wrapped = {
       async run(sql, params) {
-        const result = await tx.execute({ sql, args: params });
+        const result = await tx.execute({ sql, args: toArgs(sql, [params]) });
         return { changes: result.rowsAffected, lastInsertRowid: Number(result.lastInsertRowid) };
       },
     };
@@ -85,4 +97,4 @@ async function transaction(fn) {
   }
 }
 
-module.exports = { client, schema, addColumnIfMissing, prepare, transaction, ready: () => ready };
+module.exports = { client, schema, addColumnIfMissing, prepare, transaction, toArgs, ready: () => ready };

@@ -5,3 +5,4 @@ data.sqlite-wal
 data.sqlite-shm
 google-service-account.json
 *.log
+.vercel

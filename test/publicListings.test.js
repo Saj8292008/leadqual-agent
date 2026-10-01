@@ -1,5 +1,11 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+// Loads the DB — isolate it (node --test runs files in parallel).
+process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "leadqual-test-"));
 const { formatListing } = require("../src/routes/publicListings");
 
 test("formatListing parses photo_urls JSON into an array", () => {

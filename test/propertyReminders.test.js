@@ -1,5 +1,11 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+// Loads the DB — isolate it (node --test runs files in parallel).
+process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "leadqual-test-"));
 const { currentPeriod, dueDateForPeriod, applicableLeaseMilestone } = require("../src/services/propertyReminders");
 
 test("currentPeriod returns YYYY-MM for the given date", () => {
