@@ -3,6 +3,7 @@ const express = require("express");
 const { requireAdminAuth } = require("../middleware/adminAuth");
 const { getSetting, setSetting, deleteSetting } = require("../db/settings");
 const calendar = require("../services/calendar");
+const { formatForAgent } = require("../lib/time");
 
 const router = express.Router();
 
@@ -91,11 +92,25 @@ router.get("/connect/calendar/callback", async (req, res) => {
   }
 });
 
+// ?check=1 also proves the connection still works end to end by reading
+// real free/busy and returning the next open showing times.
 router.get("/connect/calendar/status", requireAdminAuth, async (req, res) => {
   const connection = await getSetting(calendar.CALENDAR_CONNECTION_KEY);
-  res.json(connection
-    ? { connected: true, email: connection.email, connected_at: connection.connected_at }
-    : { connected: false });
+  if (!connection) return res.json({ connected: false });
+  const status = { connected: true, email: connection.email, connected_at: connection.connected_at };
+  if (req.query.check) {
+    try {
+      const slots = await calendar.getAvailability({ days: 5 });
+      status.working = true;
+      status.next_open_times = slots.map((s) =>
+        formatForAgent(s.start, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      );
+    } catch (err) {
+      status.working = false;
+      status.error = err.message;
+    }
+  }
+  res.json(status);
 });
 
 router.post("/connect/calendar/disconnect", requireAdminAuth, async (req, res) => {
