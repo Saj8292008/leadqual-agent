@@ -80,14 +80,12 @@ async function handleInbound(evt) {
     await statements.updateLead.run({ ...lead, thread_id: msg.thread_id });
   }
 
-  // If we just offered numbered showing slots, a reply naming one of them is a pick.
+  // While numbered showing options are open (offered and not yet booked), a
+  // reply naming one of them is a pick — even if Sam has sent a clarifying
+  // "which number?" email since the options went out.
   const fresh = await statements.getLead.get(lead.id);
   const offered = fresh.offered_slots ? JSON.parse(fresh.offered_slots) : [];
-  const lastOutbound = (await statements.historyForLead.all(lead.id))
-    .filter((m) => m.direction === "outbound")
-    .pop();
-  const awaitingSlotPick = offered.length && lastOutbound && /Reply with the number/i.test(lastOutbound.body);
-  const pick = awaitingSlotPick ? slotPick(body, offered.length) : null;
+  const pick = offered.length ? slotPick(body, offered.length) : null;
 
   if (pick) {
     await confirmBooking(lead.id, pick);

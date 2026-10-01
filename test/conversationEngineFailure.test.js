@@ -52,7 +52,7 @@ test("a calendar failure while booking hands the lead to a human", async () => {
   // lead waiting on slots that never arrive.
   const calendar = require("../src/services/calendar");
   const { offerShowingSlots, confirmBooking } = require("../src/services/conversationEngine");
-  const slot = { start: "2026-09-29T15:00:00.000Z", end: "2026-09-29T16:00:00.000Z" };
+  const slot = { start: "2099-07-07T15:00:00.000Z", end: "2099-07-07T16:00:00.000Z" };
 
   for (const [label, failingCall, run] of [
     ["offering slots", "getAvailability", (id) => offerShowingSlots(id)],
@@ -93,7 +93,7 @@ test("a numeric reply books exactly the time the lead was shown, even if availab
   const info = await statements.insertLead.run({ source: "zillow", name: "Pick Test", email: "pick@example.com", notes: null });
   const leadId = info.lastInsertRowid;
   const slotAt = (iso) => ({ start: iso, end: new Date(new Date(iso).getTime() + 3600000).toISOString() });
-  const offered = [slotAt("2026-09-29T14:00:00.000Z"), slotAt("2026-09-29T15:00:00.000Z"), slotAt("2026-09-29T16:00:00.000Z")];
+  const offered = [slotAt("2099-07-07T14:00:00.000Z"), slotAt("2099-07-07T15:00:00.000Z"), slotAt("2099-07-07T16:00:00.000Z")];
 
   const originals = { avail: calendar.getAvailability, book: calendar.bookShowing, send: email.sendEmail };
   const booked = [];
@@ -135,4 +135,32 @@ test("the AI can't mark a lead booked — only an actual calendar booking does",
     email.sendEmail = originals.send;
   }
   assert.equal((await statements.getLead.get(leadId)).status, "qualifying");
+});
+
+test("picking an option whose time has already passed sends fresh options instead of booking the past", async () => {
+  const calendar = require("../src/services/calendar");
+  const email = require("../src/services/email");
+  const { confirmBooking } = require("../src/services/conversationEngine");
+  const info = await statements.insertLead.run({ source: "zillow", name: "Late Pick", email: "late@example.com", notes: null });
+  const leadId = info.lastInsertRowid;
+  const past = { start: "2020-01-01T15:00:00.000Z", end: "2020-01-01T16:00:00.000Z" };
+  const future = { start: "2099-01-05T15:00:00.000Z", end: "2099-01-05T16:00:00.000Z" };
+  await statements.setOfferedSlots.run({ id: leadId, offered_slots: JSON.stringify([past]) });
+
+  const originals = { avail: calendar.getAvailability, book: calendar.bookShowing, send: email.sendEmail };
+  const booked = [];
+  const sent = [];
+  calendar.getAvailability = async () => [future];
+  calendar.bookShowing = async ({ slot }) => (booked.push(slot), { id: "evt" });
+  email.sendEmail = async (args) => (sent.push(args), { messageId: null });
+  try {
+    await confirmBooking(leadId, 1);
+  } finally {
+    calendar.getAvailability = originals.avail;
+    calendar.bookShowing = originals.book;
+    email.sendEmail = originals.send;
+  }
+  assert.equal(booked.length, 0);
+  assert.match(sent[0].text, /A few options/);
+  assert.deepEqual(JSON.parse((await statements.getLead.get(leadId)).offered_slots), [future]);
 });

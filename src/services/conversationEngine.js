@@ -43,7 +43,10 @@ async function runTurn(leadId) {
 
   let decision;
   try {
-    decision = await claude.converse({ lead, history });
+    const pendingOptions = (lead.offered_slots ? JSON.parse(lead.offered_slots) : []).map((slot) =>
+      describeSlot(slot, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    );
+    decision = await claude.converse({ lead, history, pendingOptions });
   } catch (err) {
     // If the model can't produce a reply (provider down, timeouts, bad
     // output after retries), the lead would otherwise sit unanswered with
@@ -156,6 +159,14 @@ async function confirmBooking(leadId, slotIndex) {
   const offered = lead.offered_slots ? JSON.parse(lead.offered_slots) : [];
   const slot = offered[slotIndex - 1];
   const subject = subjectFor(lead);
+
+  if (slot && new Date(slot.start) <= new Date()) {
+    // Picked a time that has already passed (e.g. replied a day late) —
+    // send fresh options rather than booking the past.
+    await statements.setOfferedSlots.run({ id: leadId, offered_slots: null });
+    await offerShowingSlots(leadId);
+    return null;
+  }
 
   if (!slot) {
     const body = `That number didn't match — can you reply with ${offered.map((_, i) => i + 1).join(", ") || "1, 2, or 3"}?`;

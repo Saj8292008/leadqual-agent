@@ -15,6 +15,10 @@ Rules:
   slots right after your reply, so just say you'll send a few times.
 - Never tell the lead a showing is booked, scheduled or confirmed, and never set status to booked
   yourself — only the booking system does that, after the lead picks one of the offered times.
+- If showing options were already sent and are awaiting a pick (listed in the lead context), don't
+  say you'll send times. If the lead's reply doesn't clearly choose one, ask them to reply with the
+  number of the time they want. If none of the times work for them, set handoff=true and say the
+  agent will reach out to find a time.
 - If the lead goes cold or says "not now", set status=nurture with a sensible next_followup_days.
 - If the lead is clearly not qualified (no budget, browsing only, wrong area) after 2-3 exchanges,
   set status=nurture with next_followup_days=14+.
@@ -47,14 +51,17 @@ const UPDATE_LEAD_TOOL = {
   },
 };
 
-async function converse({ lead, history }) {
+async function converse({ lead, history, pendingOptions = [] }) {
   const transcript = history
     .map((m) => `${m.direction === "inbound" ? "Lead" : "Sam"}: ${m.body}`)
     .join("\n");
 
   const leadContext = `Lead so far — name: ${lead.name || "unknown"}, source: ${lead.source}, ` +
     `budget: ${lead.budget || "unknown"}, timeline: ${lead.timeline || "unknown"}, ` +
-    `motivation: ${lead.motivation || "unknown"}, notes: ${lead.notes || "none"}.`;
+    `motivation: ${lead.motivation || "unknown"}, notes: ${lead.notes || "none"}.` +
+    (pendingOptions.length
+      ? `\nShowing options already sent, awaiting the lead's pick: ${pendingOptions.map((o, i) => `${i + 1}) ${o}`).join(", ")}.`
+      : "");
 
   return callTool({
     system: SYSTEM_PROMPT,
