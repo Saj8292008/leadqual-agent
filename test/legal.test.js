@@ -28,3 +28,12 @@ test("terms of service are public", async () => {
   assert.equal(res.status, 200);
   assert.match(await res.text(), /Terms of Service/);
 });
+
+test("home page describes the app and links to the privacy policy", async () => {
+  const res = await fetch(base + "/");
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /AI Assistant/);
+  assert.match(html, /href="\/privacy"/);
+  assert.match(html, /href="\/terms"/);
+});

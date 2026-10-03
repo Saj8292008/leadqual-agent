@@ -29,6 +29,35 @@ function page(title, body) {
 </body></html>`;
 }
 
+// Home page: Google's verification checks that it describes the app and
+// links to the privacy policy.
+router.get("/", (req, res) => {
+  res.send(page(BUSINESS, `
+<h1>${BUSINESS} AI Assistant</h1>
+<p class="meta">An AI assistant for real estate agents</p>
+
+<p>${BUSINESS} gives real estate agents an AI assistant that answers new leads within seconds, any time of day.
+When someone inquires through an agent's website or ads, the assistant emails them, asks a few friendly
+questions about their budget, timeline and home search, and books a property showing at a time the agent
+is free.</p>
+
+<h2>How it uses Google Calendar</h2>
+<p>Agents can connect their Google Calendar so the assistant only offers leads times when the agent is free,
+and adds booked showings straight to the agent's calendar. The assistant checks free/busy times and creates
+showing events — nothing else. See the <a href="/privacy">Privacy Policy</a> for details.</p>
+
+<h2>What agents get</h2>
+<ul>
+  <li>Instant, personal replies to every new lead</li>
+  <li>Lead qualification by email: budget, timeline and what they're looking for</li>
+  <li>Showings booked on the agent's own calendar</li>
+  <li>An alert whenever a lead needs the agent personally</li>
+</ul>
+
+<p>Contact: <strong>${contactEmail()}</strong></p>
+`));
+});
+
 router.get("/privacy", (req, res) => {
   const contact = contactEmail();
   res.send(page("Privacy Policy", `
