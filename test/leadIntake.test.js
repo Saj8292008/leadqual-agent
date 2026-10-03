@@ -49,7 +49,7 @@ test("an alert from an unknown sender is flagged to the agent, never auto-contac
   assert.equal(result.action, "flagged_unknown_sender");
   assert.equal(await statements.findLeadByEmail.get("victim@example.com"), undefined);
   assert.equal(sentAlerts.length, 1);
-  assert.match(sentAlerts[0].reason, /unrecognized sender \(random@gmail\.com\).*NOT contacted/);
+  assert.match(sentAlerts[0].reason, /unrecognized sender \(random@gmail\.com\).*did NOT contact/);
 });
 
 test("a lead with only a phone number goes to the agent to call", async () => {

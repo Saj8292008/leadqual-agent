@@ -5,7 +5,7 @@ const alerts = require("./alerts");
 // Turns "new lead" notification emails — from the agent's website platform,
 // Zillow, Realtor.com, a Facebook-leads CRM, anything that emails the agent
 // when someone inquires — into leads, so a source only needs to BCC or
-// forward its alerts to the intake inbox (LEAD_INTAKE_INBOX_ID).
+// forward its alerts to the assistant's inbox.
 
 const EXTRACT_SYSTEM = `You read a single email and decide whether it is a notification about a new
 real estate lead (someone who filled in a contact form, requested info on a listing, or responded
@@ -68,8 +68,9 @@ async function handleLeadAlert({ sender, subject, text }) {
   if (!isAllowedSender(sender)) {
     await alerts.notifyHandoff({
       lead: asAlertLead,
-      reason: `Lead alert from an unrecognized sender (${sender}) — NOT contacted automatically. ` +
-        `Lead: ${describe(lead)}. If this is one of your lead sources, add ${sender} to LEAD_INTAKE_ALLOWED_SENDERS.`,
+      reason: `Possible new lead from an unrecognized sender (${sender}), so the assistant did NOT contact them — ` +
+        `please follow up yourself. Lead: ${describe(lead)}. If ${sender} is one of your lead sources, ` +
+        `reply to let us know and future leads from it will be handled automatically.`,
     });
     return { action: "flagged_unknown_sender" };
   }
