@@ -3,6 +3,7 @@ const { inBackground } = require("../lib/background");
 const { statements } = require("../db");
 const { runTurn, confirmBooking } = require("../services/conversationEngine");
 const { isValidAgentMailSignature } = require("../middleware/webhookAuth");
+const { handleLeadAlert } = require("../services/leadIntake");
 
 const router = express.Router();
 
@@ -17,7 +18,8 @@ function extractEmailAddress(from) {
 
 // AgentMail webhook — register with:
 //   POST https://api.agentmail.to/v0/webhooks
-//   { "url": "<this>/webhooks/email", "event_types": ["message.received"], "inbox_ids": [AGENTMAIL_INBOX_ID] }
+//   { "url": "<this>/webhooks/email", "event_types": ["message.received"],
+//     "inbox_ids": [AGENTMAIL_INBOX_ID, LEAD_INTAKE_INBOX_ID] }
 // and put the returned whsec_ secret in AGENTMAIL_WEBHOOK_SECRET.
 // Just what the lead wrote this time. Mail clients quote the whole earlier
 // thread under a reply ("On Wed ... wrote: > ..."), so the raw text of a
@@ -54,6 +56,16 @@ async function handleInbound(evt) {
 
   const msg = evt.message;
   const from = extractEmailAddress(msg.from);
+
+  // New-lead alerts (website, Facebook-ads CRM, Zillow...) are BCC'd or
+  // forwarded to a separate intake inbox — read the full text, since a
+  // forwarded alert sits below the forward header where extracted_text
+  // would cut it.
+  if (process.env.LEAD_INTAKE_INBOX_ID && msg.inbox_id === process.env.LEAD_INTAKE_INBOX_ID) {
+    const result = await handleLeadAlert({ sender: from, subject: msg.subject, text: msg.text || msg.extracted_text });
+    if (result.action === "created") await runTurn(result.leadId);
+    return;
+  }
   const body = replyText(msg);
 
   const lead = await statements.findLeadByEmail.get(from);
