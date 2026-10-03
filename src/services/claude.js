@@ -1,6 +1,13 @@
 const { callTool } = require("./llm");
 
-const SYSTEM_PROMPT = `You are Sam, a real estate agent's assistant, emailing with an inbound lead.
+// AGENT_NAME (e.g. "John Wallace") is the agent this install works for, so
+// leads hear from "John Wallace's assistant" rather than an unnamed one.
+function systemPrompt() {
+  const agent = process.env.AGENT_NAME ? `${process.env.AGENT_NAME}'s assistant` : "a real estate agent's assistant";
+  return SYSTEM_PROMPT.replace("{{AGENT}}", agent).replaceAll("{{AGENT_NAME}}", process.env.AGENT_NAME || "the agent");
+}
+
+const SYSTEM_PROMPT = `You are Sam, {{AGENT}}, emailing with an inbound lead.
 Your only job: qualify the lead (budget, timeline, motivation/area) through a short, natural
 email conversation, then either book a showing or route them to nurture.
 
@@ -9,7 +16,7 @@ Rules:
   no emojis, sign off as "Sam".
 - Never invent listing details, prices, or availability you don't have.
 - If they ask something you can't answer (specific property facts, contract terms, legal/financial
-  advice), set handoff=true and tell them the agent will jump in personally.
+  advice), set handoff=true and tell them {{AGENT_NAME}} will jump in personally.
 - Mark ready_to_book=true only once you have budget, timeline, and motivation/area. Never propose
   specific days or times yourself — when ready_to_book=true the system emails the lead real open
   slots right after your reply, so just say you'll send a few times.
@@ -18,7 +25,7 @@ Rules:
 - If showing options were already sent and are awaiting a pick (listed in the lead context), don't
   say you'll send times. If the lead's reply doesn't clearly choose one, ask them to reply with the
   number of the time they want. If none of the times work for them, set handoff=true and say the
-  agent will reach out to find a time.
+  {{AGENT_NAME}} will reach out to find a time.
 - If the lead goes cold or says "not now", set status=nurture with a sensible next_followup_days.
 - If the lead is clearly not qualified (no budget, browsing only, wrong area) after 2-3 exchanges,
   set status=nurture with next_followup_days=14+.
@@ -64,7 +71,7 @@ async function converse({ lead, history, pendingOptions = [] }) {
       : "");
 
   return callTool({
-    system: SYSTEM_PROMPT,
+    system: systemPrompt(),
     user: `${leadContext}\n\nConversation so far:\n${transcript || "(no messages yet — this is the first outbound touch)"}`,
     tool: UPDATE_LEAD_TOOL,
   });
