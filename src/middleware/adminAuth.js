@@ -11,6 +11,11 @@ function requireAdminAuth(req, res, next) {
     return res.status(500).json({ error: "ADMIN_SECRET is not configured" });
   }
   if (provided !== process.env.ADMIN_SECRET) {
+    // Never logs the key — just enough to tell a mangled link from a wrong one.
+    console.warn(
+      `[admin-auth] rejected ${req.method} ${req.path}: ` +
+        (raw === undefined ? "no key" : `key length ${String(raw).length} (expected ${process.env.ADMIN_SECRET.length})`)
+    );
     return res.status(401).json({ error: "unauthorized" });
   }
   next();
