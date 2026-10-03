@@ -10,6 +10,7 @@ const propertyManagementRouter = require("./routes/propertyManagement");
 const publicListingsRouter = require("./routes/publicListings");
 const calendarConnectRouter = require("./routes/calendarConnect");
 const cronRouter = require("./routes/cron");
+const legalRouter = require("./routes/legal");
 
 // The Express app on its own, so it can be served by a long-running process
 // (src/server.js) or imported as a Vercel function (api/index.js).
@@ -29,6 +30,7 @@ app.use(propertyManagementRouter);
 app.use(publicListingsRouter);
 app.use(calendarConnectRouter);
 app.use(cronRouter);
+app.use(legalRouter);
 
 // Express 5 routes rejected promises here — log it, and don't leak internals.
 app.use((err, req, res, _next) => {
