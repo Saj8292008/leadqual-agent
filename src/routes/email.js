@@ -1,7 +1,7 @@
 const express = require("express");
 const { inBackground } = require("../lib/background");
 const { statements } = require("../db");
-const { runTurn, confirmBooking } = require("../services/conversationEngine");
+const { runTurn, confirmBooking, isHumanOwned, forwardToAgent } = require("../services/conversationEngine");
 const { isValidAgentMailSignature } = require("../middleware/webhookAuth");
 const { handleLeadAlert } = require("../services/leadIntake");
 
@@ -55,6 +55,7 @@ async function handleInbound(evt) {
 
   const msg = evt.message;
   const from = extractEmailAddress(msg.from);
+  const body = replyText(msg);
 
   const lead = await statements.findLeadByEmail.get(from);
   if (!lead) {
@@ -85,10 +86,18 @@ async function handleInbound(evt) {
     await statements.updateLead.run({ ...lead, thread_id: msg.thread_id });
   }
 
+  const fresh = await statements.getLead.get(lead.id);
+
+  // Once the agent owns the lead (handed off, booked, or it had gone dead),
+  // the AI stops replying and the agent is sent the message instead.
+  if (isHumanOwned(fresh)) {
+    await forwardToAgent(lead.id, body);
+    return;
+  }
+
   // While numbered showing options are open (offered and not yet booked), a
   // reply naming one of them is a pick — even if Sam has sent a clarifying
   // "which number?" email since the options went out.
-  const fresh = await statements.getLead.get(lead.id);
   const offered = fresh.offered_slots ? JSON.parse(fresh.offered_slots) : [];
   const pick = offered.length ? slotPick(body, offered.length) : null;
 
@@ -104,3 +113,4 @@ module.exports = router;
 module.exports.extractEmailAddress = extractEmailAddress;
 module.exports.replyText = replyText;
 module.exports.slotPick = slotPick;
+module.exports.handleInbound = handleInbound;

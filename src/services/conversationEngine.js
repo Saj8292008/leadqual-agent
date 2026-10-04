@@ -59,7 +59,10 @@ async function runTurn(leadId) {
   // Only confirmBooking marks a lead booked — that's when a calendar event
   // actually exists. Observed live: the model replied "I've booked you" and
   // set booked with nothing on the calendar.
-  const status = decision.status === "booked" ? "qualifying" : decision.status;
+  // A handoff flag means the agent now owns the lead — record it as the
+  // status, or the lead's next reply would go back to the AI (observed: the
+  // model often sets handoff=true while leaving status "qualifying").
+  const status = decision.handoff ? "handoff" : decision.status === "booked" ? "qualifying" : decision.status;
 
   const updated = {
     id: lead.id,
@@ -90,8 +93,9 @@ async function runTurn(leadId) {
     });
   }
 
-  // Don't resend the same options if they're already waiting on a pick.
-  if (decision.ready_to_book && !lead.offered_slots) {
+  // Don't resend the same options if they're already waiting on a pick, and
+  // don't start booking a lead that was just handed to the agent.
+  if (decision.ready_to_book && !decision.handoff && !lead.offered_slots) {
     await offerShowingSlots(lead.id);
   }
 
@@ -103,6 +107,30 @@ async function runTurn(leadId) {
   }
 
   return decision;
+}
+
+// Statuses where a person, not the AI, owns the conversation: the agent was
+// handed the lead, a showing is booked (reschedules, questions about the
+// visit), or the lead had gone dead and is writing back.
+const HUMAN_OWNED_STATUSES = ["handoff", "booked", "dead"];
+
+function isHumanOwned(lead) {
+  return HUMAN_OWNED_STATUSES.includes(lead.status);
+}
+
+// A lead the agent owns wrote in. The AI stays quiet — replying would talk
+// over the agent — and the agent gets the message instead.
+async function forwardToAgent(leadId, text) {
+  const lead = await statements.getLead.get(leadId);
+  const why = {
+    handoff: "You're handling this lead",
+    booked: "This lead has a showing booked (they may want to reschedule or ask about it)",
+    dead: "This lead had gone quiet and just wrote back",
+  }[lead.status];
+  await alerts.notifyHandoff({
+    lead,
+    reason: `${why}, so your assistant did not reply. They wrote: "${String(text).slice(0, 600)}" — please reply to them directly.`,
+  });
 }
 
 async function lastInboundMessageId(leadId) {
@@ -187,6 +215,8 @@ async function confirmBooking(leadId, slotIndex) {
 
 module.exports = {
   runTurn,
+  isHumanOwned,
+  forwardToAgent,
   offerShowingSlots,
   confirmBooking,
   subjectFor,
