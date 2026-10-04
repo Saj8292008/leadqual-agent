@@ -9,6 +9,19 @@ function subjectFor(lead) {
   return `Re: your home search${lead.name ? " — " + lead.name : ""}`;
 }
 
+// Every email to a lead goes through here. A lead who opted out is never
+// emailed again, whichever code path (reply, drip, booking) tries to.
+async function sendToLead(lead, { subject, text, inReplyTo }) {
+  const current = await statements.getLead.get(lead.id);
+  if (current.opted_out_at) {
+    console.log(`[email] lead ${lead.id} opted out — not sending "${subject}"`);
+    return null;
+  }
+  const sent = await email.sendEmail({ to: current.email, subject, text, inReplyTo });
+  await recordMessage(lead.id, "outbound", text, { subject, messageId: sent.messageId });
+  return sent;
+}
+
 async function recordMessage(leadId, direction, body, { subject, messageId } = {}) {
   await statements.insertMessage.run({
     lead_id: leadId,
@@ -35,11 +48,51 @@ async function handOff(leadId, reason) {
     .catch((alertErr) => console.error(`[handoff] alert failed for lead ${leadId}:`, alertErr));
 }
 
+// Fair housing safety net. When a lead's message brings up a protected
+// characteristic as a search criterion, or asks to exclude groups, the model
+// sometimes echoed it back ("a community that aligns with your values" —
+// observed with the real model despite the prompt rules). These messages
+// get a fixed, neutral reply and go to the agent; the model isn't asked.
+// Deliberately narrow: "we have two kids, need 3 bedrooms" is normal and
+// still goes to the AI.
+const FAIR_HOUSING_PATTERNS = [
+  ["religion", /\b(christian|muslim|islamic|jewish|catholic|hindu|buddhist|sikh|mormon|church[- ]going|mosque|synagogue|temple)\b/i],
+  ["race or ethnicity", /\b(black|white|hispanic|latino|latina|asian|african[- ]american|caucasian|indian|arab|ethnic|ethnicity|racial|race)\s+(neighborhood|area|community|people|families|folks|residents|population)\b/i],
+  ["people like us", /\bpeople like (us|me)\b|\b(our|my) kind of people\b/i],
+  ["excluding groups", /\b(without|no|fewer|not (a lot|many|too many)|away from)\b[^.?!]{0,30}\b(section\s*8|renters|immigrants|foreigners|minorities|low[- ]income|projects|government housing)\b/i],
+  ["demographics", /\b(demographics?|diverse|diversity|integrated)\b/i],
+];
+
+function fairHousingConcern(text) {
+  for (const [category, pattern] of FAIR_HOUSING_PATTERNS) {
+    if (pattern.test(String(text || ""))) return category;
+  }
+  return null;
+}
+
+function fairHousingReply() {
+  const agent = process.env.AGENT_NAME || "the agent";
+  return `Thanks for reaching out! I help everyone find a home based on what they need, like budget, size, commute and features. ${agent} will reach out to you personally to help with your search.\n\nSam`;
+}
+
 // Runs one turn of the qualification conversation for a lead: loads history,
 // asks Claude what to say/decide next, persists state, and sends the email.
 async function runTurn(leadId) {
   const lead = await statements.getLead.get(leadId);
+  if (lead.opted_out_at) return null;
   const history = await statements.historyForLead.all(leadId);
+
+  const lastInbound = history.filter((m) => m.direction === "inbound").pop();
+  const concern = fairHousingConcern(lastInbound ? lastInbound.body : lead.notes);
+  if (concern) {
+    await sendToLead(lead, { subject: subjectFor(lead), text: fairHousingReply(), inReplyTo: await lastInboundMessageId(leadId) });
+    await handOff(
+      leadId,
+      `Fair housing: the lead's message raised ${concern} as a search criterion, so your assistant sent a neutral ` +
+        `reply and stopped. Please follow up personally and keep the search to needs, budget and location.`
+    );
+    return { status: "handoff", handoff: true, fair_housing: concern };
+  }
 
   let decision;
   try {
@@ -80,16 +133,10 @@ async function runTurn(leadId) {
   await statements.updateLead.run(updated);
 
   if (decision.reply) {
-    const subject = subjectFor(lead);
-    const sent = await email.sendEmail({
-      to: lead.email,
-      subject,
+    await sendToLead(lead, {
+      subject: subjectFor(lead),
       text: decision.reply,
       inReplyTo: await lastInboundMessageId(leadId),
-    });
-    await recordMessage(lead.id, "outbound", decision.reply, {
-      subject,
-      messageId: sent.messageId,
     });
   }
 
@@ -107,6 +154,40 @@ async function runTurn(leadId) {
   }
 
   return decision;
+}
+
+// Requests to stop. Checked before anything else on every reply and never
+// left to the AI's judgement: once a lead asks, nothing goes to them again
+// (CAN-SPAM). Matches the whole reply being "stop"/"unsubscribe", or an
+// explicit stop/remove-me phrase anywhere in it.
+const OPT_OUT_WHOLE = /^\s*(stop|unsubscribe|opt[\s-]?out|remove me|stop all|cancel|quit|end)\s*[.!]*\s*$/i;
+const OPT_OUT_PHRASE = new RegExp(
+  [
+    "\\bunsubscribe\\b",
+    "\\bopt(?:ing)?[\\s-]?out\\b",
+    "\\bstop (?:emailing|contacting|messaging|sending|writing|reaching out)\\b",
+    "\\b(?:remove|take) me off\\b",
+    "\\bremove me from\\b",
+    "\\b(?:do not|don'?t|never) (?:email|contact|message|write to|reach out to) me\\b",
+    "\\bno (?:more|further) (?:emails|messages|contact)\\b",
+    "\\bleave me alone\\b",
+  ].join("|"),
+  "i"
+);
+
+function isOptOut(text) {
+  const t = String(text || "");
+  return OPT_OUT_WHOLE.test(t) || OPT_OUT_PHRASE.test(t);
+}
+
+async function optOut(leadId, text) {
+  await statements.markOptedOut.run({ id: leadId });
+  const lead = await statements.getLead.get(leadId);
+  await alerts.notifyHandoff({
+    lead,
+    reason: `This lead asked not to be contacted ("${String(text).slice(0, 200)}"). Your assistant has stopped ` +
+      `emailing them permanently. Please don't add them back to automated follow-ups.`,
+  });
 }
 
 // Statuses where a person, not the AI, owns the conversation: the agent was
@@ -171,14 +252,7 @@ async function offerShowingSlots(leadId) {
     .join("\n");
 
   const body = `Great, I can get you in for a showing. A few options:\n${formatted}\nReply with the number that works best.\n\n— Sam`;
-  const subject = subjectFor(lead);
-  const sent = await email.sendEmail({
-    to: lead.email,
-    subject,
-    text: body,
-    inReplyTo: await lastInboundMessageId(leadId),
-  });
-  await recordMessage(lead.id, "outbound", body, { subject, messageId: sent.messageId });
+  await sendToLead(lead, { subject: subjectFor(lead), text: body, inReplyTo: await lastInboundMessageId(leadId) });
 }
 
 // Called when the lead replies with a slot number after offerShowingSlots.
@@ -198,8 +272,7 @@ async function confirmBooking(leadId, slotIndex) {
 
   if (!slot) {
     const body = `That number didn't match — can you reply with ${offered.map((_, i) => i + 1).join(", ") || "1, 2, or 3"}?`;
-    const sent = await email.sendEmail({ to: lead.email, subject, text: body, inReplyTo: await lastInboundMessageId(leadId) });
-    await recordMessage(lead.id, "outbound", body, { subject, messageId: sent.messageId });
+    await sendToLead(lead, { subject, text: body, inReplyTo: await lastInboundMessageId(leadId) });
     return null;
   }
 
@@ -208,8 +281,7 @@ async function confirmBooking(leadId, slotIndex) {
   await statements.setOfferedSlots.run({ id: leadId, offered_slots: null });
 
   const body = `You're all set — showing confirmed for ${describeSlot(slot, { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}. See you then!\n\n— Sam`;
-  const sent = await email.sendEmail({ to: lead.email, subject, text: body, inReplyTo: await lastInboundMessageId(leadId) });
-  await recordMessage(lead.id, "outbound", body, { subject, messageId: sent.messageId });
+  await sendToLead(lead, { subject, text: body, inReplyTo: await lastInboundMessageId(leadId) });
   return event;
 }
 
@@ -217,6 +289,9 @@ module.exports = {
   runTurn,
   isHumanOwned,
   forwardToAgent,
+  isOptOut,
+  optOut,
+  fairHousingConcern,
   offerShowingSlots,
   confirmBooking,
   subjectFor,

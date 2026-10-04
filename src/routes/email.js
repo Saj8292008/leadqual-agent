@@ -1,7 +1,7 @@
 const express = require("express");
 const { inBackground } = require("../lib/background");
 const { statements } = require("../db");
-const { runTurn, confirmBooking, isHumanOwned, forwardToAgent } = require("../services/conversationEngine");
+const { runTurn, confirmBooking, isHumanOwned, forwardToAgent, isOptOut, optOut } = require("../services/conversationEngine");
 const { isValidAgentMailSignature } = require("../middleware/webhookAuth");
 const { handleLeadAlert } = require("../services/leadIntake");
 
@@ -87,6 +87,15 @@ async function handleInbound(evt) {
   }
 
   const fresh = await statements.getLead.get(lead.id);
+
+  // Already opted out: never reply, never re-alert.
+  if (fresh.opted_out_at) return;
+
+  // Asked to stop — honored before anything else, whatever the lead's status.
+  if (isOptOut(body)) {
+    await optOut(lead.id, body);
+    return;
+  }
 
   // Once the agent owns the lead (handed off, booked, or it had gone dead),
   // the AI stops replying and the agent is sent the message instead.

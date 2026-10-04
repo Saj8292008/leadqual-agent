@@ -14,6 +14,7 @@ schema(`
     thread_id TEXT,
     next_followup_at TEXT,
     offered_slots TEXT,                      -- JSON [{start,end}] last emailed to the lead, so a numeric pick books exactly what they saw
+    opted_out_at TEXT,                       -- set when the lead asks to stop; nothing is ever emailed to them again
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -37,6 +38,7 @@ schema(`
 
 // Databases created before the column existed.
 addColumnIfMissing("leads", "offered_slots", "TEXT");
+addColumnIfMissing("leads", "opted_out_at", "TEXT");
 
 const statements = {
   insertLead: prepare(`
@@ -67,10 +69,15 @@ const statements = {
     SELECT direction, channel, subject, body, message_id, created_at FROM messages
     WHERE lead_id = ? ORDER BY created_at ASC
   `),
+  markOptedOut: prepare(`
+    UPDATE leads SET opted_out_at = datetime('now'), status = 'dead', next_followup_at = NULL,
+      offered_slots = NULL, updated_at = datetime('now')
+    WHERE id = @id
+  `),
   setOfferedSlots: prepare(`UPDATE leads SET offered_slots = @offered_slots WHERE id = @id`),
   leadsDueForDrip: prepare(`
     SELECT * FROM leads
-    WHERE status = 'nurture' AND datetime(next_followup_at) <= datetime('now')
+    WHERE status = 'nurture' AND opted_out_at IS NULL AND datetime(next_followup_at) <= datetime('now')
   `),
 };
 
