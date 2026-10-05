@@ -90,6 +90,7 @@ async function handleLeadAlert({ sender, subject, text }) {
   }
 
   const info = await statements.insertLead.run({ source, name: lead.name || null, email, notes });
+  if (lead.phone) await statements.setPhone.run({ id: info.lastInsertRowid, phone: lead.phone });
   return { action: "created", leadId: info.lastInsertRowid };
 }
 

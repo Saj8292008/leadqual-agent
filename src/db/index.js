@@ -15,6 +15,8 @@ schema(`
     next_followup_at TEXT,
     offered_slots TEXT,                      -- JSON [{start,end}] last emailed to the lead, so a numeric pick books exactly what they saw
     opted_out_at TEXT,                       -- set when the lead asks to stop; nothing is ever emailed to them again
+    phone TEXT,
+    agent_notes TEXT,                        -- the agent's own notes from the CRM (Sam's go in notes)
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -39,6 +41,8 @@ schema(`
 // Databases created before the column existed.
 addColumnIfMissing("leads", "offered_slots", "TEXT");
 addColumnIfMissing("leads", "opted_out_at", "TEXT");
+addColumnIfMissing("leads", "phone", "TEXT");
+addColumnIfMissing("leads", "agent_notes", "TEXT");
 
 const statements = {
   insertLead: prepare(`
@@ -72,6 +76,22 @@ const statements = {
   markOptedOut: prepare(`
     UPDATE leads SET opted_out_at = datetime('now'), status = 'dead', next_followup_at = NULL,
       offered_slots = NULL, updated_at = datetime('now')
+    WHERE id = @id
+  `),
+  // CRM pipeline: every lead with its latest message time and message count.
+  crmLeads: prepare(`
+    SELECT l.*,
+      (SELECT MAX(created_at) FROM messages m WHERE m.lead_id = l.id) AS last_message_at,
+      (SELECT COUNT(*) FROM messages m WHERE m.lead_id = l.id) AS message_count
+    FROM leads l
+    ORDER BY COALESCE((SELECT MAX(created_at) FROM messages m WHERE m.lead_id = l.id), l.created_at) DESC
+  `),
+  setStatus: prepare(`
+    UPDATE leads SET status = @status, next_followup_at = NULL, updated_at = datetime('now') WHERE id = @id
+  `),
+  setPhone: prepare(`UPDATE leads SET phone = @phone WHERE id = @id`),
+  appendAgentNote: prepare(`
+    UPDATE leads SET agent_notes = COALESCE(agent_notes || char(10), '') || @note, updated_at = datetime('now')
     WHERE id = @id
   `),
   setOfferedSlots: prepare(`UPDATE leads SET offered_slots = @offered_slots WHERE id = @id`),
